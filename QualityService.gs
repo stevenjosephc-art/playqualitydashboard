@@ -3,7 +3,7 @@
 // Source: 'PLX Raw data' tab
 // ============================================================
 
-var QUALITY_SHEET_NAME = 'PLX Raw data';
+var QUALITY_SHEET_NAME = 'QualityAudits';
 
 // ── SCHEMA MAPPING ────────────────────────────────────────────────────────
 
@@ -98,66 +98,58 @@ function doGet() {
 
 // ── DATA LOADING ──────────────────────────────────────────────────────────
 
-function getRawQualityData() {
-  if (_MEMOIZED_RAW_DATA) return _MEMOIZED_RAW_DATA;
-
-  var cache = CacheService.getScriptCache();
-  var cacheKey = 'quality_raw_v1';
-
-  try {
-    var chunkCount = cache.get(cacheKey + '_chunks');
-    if (chunkCount) {
-      var assembled = '';
-      for (var c = 0; c < parseInt(chunkCount); c++) {
-        var chunk = cache.get(cacheKey + '_chunk_' + c);
-        if (!chunk) { assembled = null; break; }
-        assembled += chunk;
-      }
-      if (assembled) {
-        _MEMOIZED_RAW_DATA = JSON.parse(assembled);
-        return _MEMOIZED_RAW_DATA;
-      }
-    }
-  } catch(e) {
-    Logger.log('Cache read error: ' + e.message);
-  }
+/**
+ * Fetches raw data from the spreadsheet.
+ * Optimization: We skip CacheService for the full raw dataset if it's large,
+ * as the overhead of 100+ cache chunks often exceeds the time to read directly from the Sheet.
+ */
+function getRawQualityData(forceRefresh) {
+  if (_MEMOIZED_RAW_DATA && !forceRefresh) return _MEMOIZED_RAW_DATA;
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) throw new Error("Active spreadsheet not found.");
+
   var sheet = ss.getSheetByName(QUALITY_SHEET_NAME);
-  if (!sheet) return [];
+  if (!sheet) throw new Error("Sheet '" + QUALITY_SHEET_NAME + "' not found.");
 
-  var raw = sheet.getDataRange().getValues();
-  if (raw.length < 2) return [];
+  // Optimization: Read only the populated range
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
 
-  var data = raw.slice(1);
-  _MEMOIZED_RAW_DATA = data;
+  var lastCol = sheet.getLastColumn();
+  var raw = sheet.getRange(1, 1, lastRow, lastCol).getValues();
 
-  try {
-    var serialized = JSON.stringify(data);
-    var chunkSize = 90000;
-    var chunks = [];
-    for (var ci = 0; ci < serialized.length; ci += chunkSize) {
-      chunks.push(serialized.slice(ci, ci + chunkSize));
+  // Optimization: Remove headers and filter out empty rows immediately
+  var data = [];
+  for (var i = 1; i < raw.length; i++) {
+    if (raw[i][Q_COLS.CASE_ID]) { // Ensure row is not empty
+      data.push(raw[i]);
     }
-    for (var j = 0; j < chunks.length; j++) {
-      cache.put(cacheKey + '_chunk_' + j, chunks[j], 600);
-    }
-    cache.put(cacheKey + '_chunks', String(chunks.length), 600);
-  } catch(e) {
-    Logger.log('Cache write error: ' + e.message);
   }
 
+  _MEMOIZED_RAW_DATA = data;
   return data;
+}
+
+var _TIMEZONE = null;
+function getTz() {
+  if (!_TIMEZONE) _TIMEZONE = Session.getScriptTimeZone();
+  return _TIMEZONE;
 }
 
 function getAvailableQualityMonths() {
   var rows = getRawQualityData();
   var seen = {};
+  var tz = getTz();
   for (var i = 0; i < rows.length; i++) {
     var month = rows[i][Q_COLS.REVIEW_MONTH];
     if (month) {
       if (month instanceof Date) {
-        month = Utilities.formatDate(month, Session.getScriptTimeZone(), 'yyyy-MM');
+        try {
+          month = Utilities.formatDate(month, tz, 'yyyy-MM');
+        } catch(e) {
+          month = month.getFullYear() + '-' + ('0' + (month.getMonth() + 1)).slice(-2);
+        }
       }
       seen[month] = true;
     }
@@ -168,7 +160,11 @@ function getAvailableQualityMonths() {
 function normalizeQualityMonth(val) {
   if (!val) return '';
   if (val instanceof Date) {
-    return Utilities.formatDate(val, Session.getScriptTimeZone(), 'yyyy-MM');
+    try {
+      return Utilities.formatDate(val, getTz(), 'yyyy-MM');
+    } catch(e) {
+      return val.getFullYear() + '-' + ('0' + (val.getMonth() + 1)).slice(-2);
+    }
   }
   return String(val).trim();
 }
@@ -181,7 +177,14 @@ function normalizeLdap(val) {
 function formatDate(val) {
   if (!val) return '';
   if (val instanceof Date) {
-    return Utilities.formatDate(val, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    try {
+      return Utilities.formatDate(val, getTz(), 'yyyy-MM-dd');
+    } catch(e) {
+      var d = val.getDate();
+      var m = val.getMonth() + 1;
+      var y = val.getFullYear();
+      return y + '-' + (m < 10 ? '0' + m : m) + '-' + (d < 10 ? '0' + d : d);
+    }
   }
   return String(val);
 }
@@ -246,7 +249,7 @@ function aggregateTrends(rows) {
     var r = rows[i];
     var dateRaw = r[Q_COLS.REVIEW_DATE];
     var date = formatDate(dateRaw);
-    var week = r[Q_COLS.REVIEW_WEEK];
+    var week = formatDate(r[Q_COLS.REVIEW_WEEK]);
 
     var trends = [ {obj: daily, key: date}, {obj: weekly, key: week} ];
     for (var j = 0; j < trends.length; j++) {
@@ -278,7 +281,13 @@ function aggregateTrends(rows) {
 
 // ── CLIENT WRAPPERS ───────────────────────────────────────────────────────
 
-function clientGetAvailableQualityMonths() {
+function clientGetAvailableQualityMonths(forceRefresh) {
+  if (forceRefresh) {
+    _MEMOIZED_RAW_DATA = null;
+    var cache = CacheService.getScriptCache();
+    cache.remove('quality_raw_v3_chunks');
+    cache.remove('quality_hierarchy_v1_chunks');
+  }
   return getAvailableQualityMonths();
 }
 
@@ -477,70 +486,72 @@ function clientGetSession() {
   };
 }
 
-function clientGetHierarchy() {
-  var cache = CacheService.getScriptCache();
-  var cacheKey = 'quality_hierarchy_v1';
+function clientGetInitialData(forceRefresh) {
+  var hierarchy = clientGetHierarchy(forceRefresh);
+  return {
+    months: clientGetAvailableQualityMonths(forceRefresh),
+    hierarchy: hierarchy.tree,
+    managers: hierarchy.managers,
+    session: clientGetSession(),
+    targets: Q_TARGETS,
+    cols: Q_COLS,
+    paramGroups: Q_PARAM_GROUPS,
+    paramCols: Q_PARAM_COLS
+  };
+}
 
-  try {
-    var chunkCount = cache.get(cacheKey + '_chunks');
-    if (chunkCount) {
-      var assembled = '';
-      for (var c = 0; c < parseInt(chunkCount); c++) {
-        var chunk = cache.get(cacheKey + '_chunk_' + c);
-        if (!chunk) { assembled = null; break; }
-        assembled += chunk;
-      }
-      if (assembled) return JSON.parse(assembled);
-    }
-  } catch(e) {
-    Logger.log('Hierarchy cache read error: ' + e.message);
+/**
+ * Optimized Hierarchy fetching.
+ * Caches the small result set instead of the whole raw data.
+ */
+function clientGetHierarchy(forceRefresh) {
+  var cache = CacheService.getScriptCache();
+  var cacheKey = 'quality_hierarchy_v2';
+
+  if (!forceRefresh) {
+    var cached = cache.get(cacheKey);
+    if (cached) return JSON.parse(cached);
   }
 
   var rows = getRawQualityData();
   var hierarchy = {};
+  var managers = {};
 
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
     var lob = String(r[Q_COLS.LOB] || 'Unknown LOB').trim();
     var sup = String(r[Q_COLS.SUPERVISOR] || 'Unknown Supervisor').trim();
     var agent = normalizeLdap(r[Q_COLS.AGENT_LDAP]);
+    var mgr = String(r[Q_COLS.MANAGER] || '').trim();
 
-    if (!agent) continue;
-
-    if (!hierarchy[lob]) hierarchy[lob] = {};
-    if (!hierarchy[lob][sup]) hierarchy[lob][sup] = {};
-
-    // Using an object as a set for agents to ensure uniqueness
-    hierarchy[lob][sup][agent] = true;
+    if (agent) {
+      if (!hierarchy[lob]) hierarchy[lob] = {};
+      if (!hierarchy[lob][sup]) hierarchy[lob][sup] = {};
+      hierarchy[lob][sup][agent] = true;
+    }
+    if (mgr) managers[mgr] = true;
   }
 
-  // Convert Agent sets to sorted arrays
-  var result = {};
+  // Format Hierarchy
+  var result = {
+    tree: {},
+    managers: Object.keys(managers).sort()
+  };
+
   var lobs = Object.keys(hierarchy).sort();
   for (var j = 0; j < lobs.length; j++) {
     var l = lobs[j];
-    result[l] = {};
+    result.tree[l] = {};
     var sups = Object.keys(hierarchy[l]).sort();
     for (var k = 0; k < sups.length; k++) {
       var s = sups[k];
-      result[l][s] = Object.keys(hierarchy[l][s]).sort();
+      result.tree[l][s] = Object.keys(hierarchy[l][s]).sort();
     }
   }
 
   try {
-    var serialized = JSON.stringify(result);
-    var chunkSize = 90000;
-    var chunks = [];
-    for (var ci = 0; ci < serialized.length; ci += chunkSize) {
-      chunks.push(serialized.slice(ci, ci + chunkSize));
-    }
-    for (var j = 0; j < chunks.length; j++) {
-      cache.put(cacheKey + '_chunk_' + j, chunks[j], 21600);
-    }
-    cache.put(cacheKey + '_chunks', String(chunks.length), 21600);
-  } catch(e) {
-    Logger.log('Hierarchy cache write error: ' + e.message);
-  }
+    cache.put(cacheKey, JSON.stringify(result), 21600);
+  } catch(e) {}
 
   return result;
 }
