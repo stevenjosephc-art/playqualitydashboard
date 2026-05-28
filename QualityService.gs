@@ -3,7 +3,7 @@
 // Source: 'PLX Raw data' tab
 // ============================================================
 
-var QUALITY_SHEET_NAME = 'PLX Raw data';
+var QUALITY_SHEET_NAME = 'QualityAudits';
 
 // ── SCHEMA MAPPING ────────────────────────────────────────────────────────
 
@@ -98,28 +98,30 @@ function doGet() {
 
 // ── DATA LOADING ──────────────────────────────────────────────────────────
 
-function getRawQualityData() {
-  if (_MEMOIZED_RAW_DATA) return _MEMOIZED_RAW_DATA;
+function getRawQualityData(forceRefresh) {
+  if (_MEMOIZED_RAW_DATA && !forceRefresh) return _MEMOIZED_RAW_DATA;
 
   var cache = CacheService.getScriptCache();
   var cacheKey = 'quality_raw_v1';
 
-  try {
-    var chunkCount = cache.get(cacheKey + '_chunks');
-    if (chunkCount) {
-      var assembled = '';
-      for (var c = 0; c < parseInt(chunkCount); c++) {
-        var chunk = cache.get(cacheKey + '_chunk_' + c);
-        if (!chunk) { assembled = null; break; }
-        assembled += chunk;
+  if (!forceRefresh) {
+    try {
+      var chunkCount = cache.get(cacheKey + '_chunks');
+      if (chunkCount) {
+        var assembled = '';
+        for (var c = 0; c < parseInt(chunkCount); c++) {
+          var chunk = cache.get(cacheKey + '_chunk_' + c);
+          if (!chunk) { assembled = null; break; }
+          assembled += chunk;
+        }
+        if (assembled) {
+          _MEMOIZED_RAW_DATA = JSON.parse(assembled);
+          return _MEMOIZED_RAW_DATA;
+        }
       }
-      if (assembled) {
-        _MEMOIZED_RAW_DATA = JSON.parse(assembled);
-        return _MEMOIZED_RAW_DATA;
-      }
+    } catch(e) {
+      Logger.log('Cache read error: ' + e.message);
     }
-  } catch(e) {
-    Logger.log('Cache read error: ' + e.message);
   }
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -278,7 +280,12 @@ function aggregateTrends(rows) {
 
 // ── CLIENT WRAPPERS ───────────────────────────────────────────────────────
 
-function clientGetAvailableQualityMonths() {
+function clientGetAvailableQualityMonths(forceRefresh) {
+  if (forceRefresh) {
+    _MEMOIZED_RAW_DATA = null;
+    var cache = CacheService.getScriptCache();
+    cache.remove('quality_raw_v1_chunks');
+  }
   return getAvailableQualityMonths();
 }
 
@@ -477,13 +484,29 @@ function clientGetSession() {
   };
 }
 
-function clientGetHierarchy() {
+function clientGetInitialData(forceRefresh) {
+  return {
+    months: clientGetAvailableQualityMonths(forceRefresh),
+    hierarchy: clientGetHierarchy(forceRefresh),
+    session: clientGetSession(),
+    targets: Q_TARGETS,
+    cols: Q_COLS,
+    paramGroups: Q_PARAM_GROUPS,
+    paramCols: Q_PARAM_COLS
+  };
+}
+
+function clientGetHierarchy(forceRefresh) {
   var cache = CacheService.getScriptCache();
   var cacheKey = 'quality_hierarchy_v1';
 
+  if (forceRefresh) {
+    cache.remove(cacheKey + '_chunks');
+  }
+
   try {
     var chunkCount = cache.get(cacheKey + '_chunks');
-    if (chunkCount) {
+    if (chunkCount && !forceRefresh) {
       var assembled = '';
       for (var c = 0; c < parseInt(chunkCount); c++) {
         var chunk = cache.get(cacheKey + '_chunk_' + c);
