@@ -8,112 +8,140 @@
   <!-- ApexCharts -->
   <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
   <!-- Google Fonts -->
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Phosphor Icons -->
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
 
   <?!= HtmlService.createHtmlOutputFromFile('QualityView_CSS').getContent(); ?>
 </head>
-<body>
+<body class="apple-style">
   <div id="app-loader" class="q-loader-overlay">
     <div class="q-spinner"></div>
-    <div class="mt-16">Loading Quality Dashboard...</div>
+    <div class="loader-text">Initializing Dashboard...</div>
   </div>
 
-  <div id="quality-root" class="q-container" style="display:none">
-    <div class="q-topbar">
-      <div class="q-page-title">
-        <div class="q-icon-badge">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="white" style="width:20px;height:20px">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
+  <div id="quality-root" class="app-layout" style="display:none">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="app-logo">
+          <i class="ph-fill ph-chart-pie-slice"></i>
         </div>
-        Quality Dashboard
+        <div class="app-name">QualityOS</div>
       </div>
-      <div class="q-controls">
-        <select id="quality-month-picker" class="q-pill-select" onchange="onMonthChange(this.value)">
-          <option value="">Loading months...</option>
-        </select>
-      </div>
-    </div>
 
-    <div class="q-tab-row">
-      <div class="q-tab active" id="tab-agent" onclick="switchTab('agent')">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="q-tab-icon">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
-        </svg>
-        <span>Agent Scores</span>
-      </div>
-      <div class="q-tab" id="tab-team" onclick="switchTab('team')">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="q-tab-icon">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a5.971 5.971 0 00-.941 3.197m0 0l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 016 21c2.17 0 4.207-.576 5.963-1.584A6.062 6.062 0 0112 18.719m-2.43-10.038a3.75 3.75 0 117.5 0 3.75 3.75 0 01-7.5 0zM4.5 9.75a2.25 2.25 0 114.5 0 2.25 2.25 0 01-4.5 0z" />
-        </svg>
-        <span>Team Scores</span>
-      </div>
-      <div class="q-tab" id="tab-cluster" onclick="switchTab('cluster')">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="q-tab-icon">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0v1.125c0 1.125.507 2.097 1.303 2.734M9 16.5v2.25m0-2.25h2.25M9 16.5H6.75M12 13.5v3.375m0 0h.008v.008H12v-.008zM9.75 10.5c0 .414.336.75.75.75h3a.75.75 0 00.75-.75V6.75a.75.75 0 00-.75-.75h-3a.75.75 0 00-.75.75v3.75z" />
-        </svg>
-        <span>Cluster Scores</span>
-      </div>
-    </div>
+      <nav class="sidebar-nav">
+        <div class="nav-group">
+          <div class="nav-item active" id="nav-agent" onclick="switchTab('agent')">
+            <i class="ph ph-user"></i>
+            <span>Agent Scores</span>
+          </div>
+          <div class="nav-item" id="nav-team" onclick="switchTab('team')">
+            <i class="ph ph-users"></i>
+            <span>Team Scores</span>
+          </div>
+          <div class="nav-item" id="nav-cluster" onclick="switchTab('cluster')">
+            <i class="ph ph-buildings"></i>
+            <span>Cluster Scores</span>
+          </div>
+        </div>
+      </nav>
 
-    <!-- Agent Selector (Cascading) -->
-    <div id="selector-agent" class="q-card mb-24 q-selector-card">
-      <div class="q-selector-group" style="flex-wrap: wrap; gap: 16px;">
-        <div class="q-filter-item">
-          <label>LOB:</label>
-          <select id="lob-select" class="q-pill-select" onchange="onLobChange(this.value)" style="min-width: 150px;">
-            <option value="">Select LOB...</option>
-          </select>
-        </div>
-        <div class="q-filter-item">
-          <label>Supervisor:</label>
-          <select id="agent-sup-select" class="q-pill-select" onchange="onAgentSupChange(this.value)" disabled style="min-width: 200px;">
-            <option value="">Select Supervisor...</option>
-          </select>
-        </div>
-        <div class="q-filter-item">
-          <label>Agent LDAP:</label>
-          <select id="agent-ldap-select" class="q-pill-select" onchange="onAgentChange(this.value)" disabled style="min-width: 180px;">
-            <option value="">Select Agent...</option>
-          </select>
+      <div class="sidebar-footer">
+        <div class="user-profile">
+          <div class="user-avatar" id="user-initials">--</div>
+          <div class="user-info">
+            <div class="user-name" id="user-ldap">User</div>
+            <div class="user-role">Quality Dashboard</div>
+          </div>
         </div>
       </div>
-    </div>
+    </aside>
 
-    <!-- Team Selector -->
-    <div id="selector-team" class="q-card mb-24 q-selector-card" style="display:none">
-      <div class="q-selector-group">
-        <label>Supervisor:</label>
-        <div class="q-search-wrapper">
-          <input type="text" id="supervisor-input" list="supervisor-list" placeholder="Enter Supervisor Name..." onchange="onSupervisorChange(this.value)">
-          <datalist id="supervisor-list"></datalist>
+    <!-- Main Content -->
+    <main class="main-content">
+      <header class="content-header">
+        <div class="header-left">
+          <h1 id="page-title">Agent Performance</h1>
+          <p id="page-subtitle">Personal Quality Score Overview</p>
+        </div>
+        <div class="header-right">
+          <div class="control-group">
+            <div class="select-wrapper">
+              <i class="ph ph-calendar-blank"></i>
+              <select id="quality-month-picker" onchange="onMonthChange(this.value)">
+                <option value="">Loading...</option>
+              </select>
+            </div>
+            <button class="icon-button refresh-btn" onclick="forceRefresh()" title="Refresh Data">
+              <i class="ph ph-arrows-clockwise"></i>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div class="scroll-container">
+        <!-- Selectors Section -->
+        <section class="selectors-section" id="selectors-container">
+          <!-- Agent Selectors -->
+          <div id="selector-agent" class="selector-row">
+            <div class="input-group">
+              <label>LOB</label>
+              <select id="lob-select" onchange="onLobChange(this.value)">
+                <option value="">Select LOB...</option>
+              </select>
+            </div>
+            <div class="input-group">
+              <label>Supervisor</label>
+              <select id="agent-sup-select" onchange="onAgentSupChange(this.value)" disabled>
+                <option value="">Select Supervisor...</option>
+              </select>
+            </div>
+            <div class="input-group search-group">
+              <label>Agent LDAP</label>
+              <div class="search-input-wrapper">
+                <i class="ph ph-magnifying-glass"></i>
+                <input type="text" id="ldap-search-input" placeholder="Search Agent..." autocomplete="off">
+                <div id="ldap-autocomplete-list" class="autocomplete-dropdown"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Team Selectors -->
+          <div id="selector-team" class="selector-row" style="display:none">
+             <div class="input-group">
+                <label>LOB</label>
+                <select id="team-lob-select" onchange="onTeamLobChange(this.value)">
+                   <option value="">Select LOB...</option>
+                </select>
+             </div>
+             <div class="input-group">
+                <label>Supervisor</label>
+                <select id="team-sup-select" onchange="onTeamSupChange(this.value)" disabled>
+                   <option value="">Select Supervisor...</option>
+                </select>
+             </div>
+          </div>
+
+          <!-- Cluster Selectors -->
+          <div id="selector-cluster" class="selector-row" style="display:none">
+             <div class="input-group">
+                <label>Manager</label>
+                <select id="mgr-select" onchange="onMgrChange(this.value)">
+                   <option value="">Select Manager...</option>
+                </select>
+             </div>
+          </div>
+        </section>
+
+        <!-- Dashboard Content -->
+        <div id="view-content" class="dashboard-grid">
+           <!-- Dynamic Content Loads Here -->
         </div>
       </div>
-    </div>
-
-    <!-- Cluster Selector -->
-    <div id="selector-cluster" class="q-card mb-24 q-selector-card" style="display:none">
-      <div class="q-selector-group">
-        <label>Manager:</label>
-        <div class="q-search-wrapper">
-          <input type="text" id="manager-input" list="manager-list" placeholder="Enter Manager Name..." onchange="onManagerChange(this.value)">
-          <datalist id="manager-list"></datalist>
-        </div>
-      </div>
-    </div>
-
-    <div id="view-content"></div>
+    </main>
   </div>
 
-  <script>
-    // Injected from server
-    try {
-      window.BOOTSTRAP_DATA = <?!= bootstrap ?>;
-    } catch (e) {
-      console.error('Failed to parse BOOTSTRAP_DATA', e);
-      window.BOOTSTRAP_DATA = { error: 'Parse Error: ' + e.message };
-    }
-  </script>
   <?!= HtmlService.createHtmlOutputFromFile('QualityView_JS').getContent(); ?>
 </body>
 </html>
