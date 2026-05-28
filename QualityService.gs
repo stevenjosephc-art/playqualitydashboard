@@ -3,7 +3,7 @@
 // Source: 'PLX Raw data' tab
 // ============================================================
 
-var QUALITY_SHEET_NAME = 'PLX Raw data';
+var QUALITY_SHEET_NAME = 'QualityAudits';
 
 // ── SCHEMA MAPPING ────────────────────────────────────────────────────────
 
@@ -98,36 +98,43 @@ function doGet() {
 
 // ── DATA LOADING ──────────────────────────────────────────────────────────
 
-function getRawQualityData() {
-  if (_MEMOIZED_RAW_DATA) return _MEMOIZED_RAW_DATA;
+function getRawQualityData(forceRefresh) {
+  if (_MEMOIZED_RAW_DATA && !forceRefresh) return _MEMOIZED_RAW_DATA;
 
   var cache = CacheService.getScriptCache();
-  var cacheKey = 'quality_raw_v1';
+  var cacheKey = 'quality_raw_v3';
 
-  try {
-    var chunkCount = cache.get(cacheKey + '_chunks');
-    if (chunkCount) {
-      var assembled = '';
-      for (var c = 0; c < parseInt(chunkCount); c++) {
-        var chunk = cache.get(cacheKey + '_chunk_' + c);
-        if (!chunk) { assembled = null; break; }
-        assembled += chunk;
+  if (!forceRefresh) {
+    try {
+      var chunkCount = cache.get(cacheKey + '_chunks');
+      if (chunkCount) {
+        var assembled = '';
+        for (var c = 0; c < parseInt(chunkCount); c++) {
+          var chunk = cache.get(cacheKey + '_chunk_' + c);
+          if (!chunk) { assembled = null; break; }
+          assembled += chunk;
+        }
+        if (assembled) {
+          _MEMOIZED_RAW_DATA = JSON.parse(assembled);
+          return _MEMOIZED_RAW_DATA;
+        }
       }
-      if (assembled) {
-        _MEMOIZED_RAW_DATA = JSON.parse(assembled);
-        return _MEMOIZED_RAW_DATA;
-      }
+    } catch(e) {
+      Logger.log('Cache read error: ' + e.message);
     }
-  } catch(e) {
-    Logger.log('Cache read error: ' + e.message);
   }
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) throw new Error("Active spreadsheet not found. Ensure the script is bound to a Google Sheet.");
+
   var sheet = ss.getSheetByName(QUALITY_SHEET_NAME);
-  if (!sheet) return [];
+  if (!sheet) throw new Error("Sheet '" + QUALITY_SHEET_NAME + "' not found. Available sheets: " + ss.getSheets().map(function(s){ return s.getName(); }).join(", "));
 
   var raw = sheet.getDataRange().getValues();
-  if (raw.length < 2) return [];
+  if (raw.length < 2) {
+    Logger.log('Sheet is empty or has only headers.');
+    return [];
+  }
 
   var data = raw.slice(1);
   _MEMOIZED_RAW_DATA = data;
@@ -150,14 +157,25 @@ function getRawQualityData() {
   return data;
 }
 
+var _TIMEZONE = null;
+function getTz() {
+  if (!_TIMEZONE) _TIMEZONE = Session.getScriptTimeZone();
+  return _TIMEZONE;
+}
+
 function getAvailableQualityMonths() {
   var rows = getRawQualityData();
   var seen = {};
+  var tz = getTz();
   for (var i = 0; i < rows.length; i++) {
     var month = rows[i][Q_COLS.REVIEW_MONTH];
     if (month) {
       if (month instanceof Date) {
-        month = Utilities.formatDate(month, Session.getScriptTimeZone(), 'yyyy-MM');
+        try {
+          month = Utilities.formatDate(month, tz, 'yyyy-MM');
+        } catch(e) {
+          month = month.getFullYear() + '-' + ('0' + (month.getMonth() + 1)).slice(-2);
+        }
       }
       seen[month] = true;
     }
@@ -168,7 +186,11 @@ function getAvailableQualityMonths() {
 function normalizeQualityMonth(val) {
   if (!val) return '';
   if (val instanceof Date) {
-    return Utilities.formatDate(val, Session.getScriptTimeZone(), 'yyyy-MM');
+    try {
+      return Utilities.formatDate(val, getTz(), 'yyyy-MM');
+    } catch(e) {
+      return val.getFullYear() + '-' + ('0' + (val.getMonth() + 1)).slice(-2);
+    }
   }
   return String(val).trim();
 }
@@ -181,7 +203,14 @@ function normalizeLdap(val) {
 function formatDate(val) {
   if (!val) return '';
   if (val instanceof Date) {
-    return Utilities.formatDate(val, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    try {
+      return Utilities.formatDate(val, getTz(), 'yyyy-MM-dd');
+    } catch(e) {
+      var d = val.getDate();
+      var m = val.getMonth() + 1;
+      var y = val.getFullYear();
+      return y + '-' + (m < 10 ? '0' + m : m) + '-' + (d < 10 ? '0' + d : d);
+    }
   }
   return String(val);
 }
@@ -246,7 +275,7 @@ function aggregateTrends(rows) {
     var r = rows[i];
     var dateRaw = r[Q_COLS.REVIEW_DATE];
     var date = formatDate(dateRaw);
-    var week = r[Q_COLS.REVIEW_WEEK];
+    var week = formatDate(r[Q_COLS.REVIEW_WEEK]);
 
     var trends = [ {obj: daily, key: date}, {obj: weekly, key: week} ];
     for (var j = 0; j < trends.length; j++) {
@@ -278,7 +307,13 @@ function aggregateTrends(rows) {
 
 // ── CLIENT WRAPPERS ───────────────────────────────────────────────────────
 
-function clientGetAvailableQualityMonths() {
+function clientGetAvailableQualityMonths(forceRefresh) {
+  if (forceRefresh) {
+    _MEMOIZED_RAW_DATA = null;
+    var cache = CacheService.getScriptCache();
+    cache.remove('quality_raw_v3_chunks');
+    cache.remove('quality_hierarchy_v1_chunks');
+  }
   return getAvailableQualityMonths();
 }
 
@@ -477,13 +512,29 @@ function clientGetSession() {
   };
 }
 
-function clientGetHierarchy() {
+function clientGetInitialData(forceRefresh) {
+  return {
+    months: clientGetAvailableQualityMonths(forceRefresh),
+    hierarchy: clientGetHierarchy(forceRefresh),
+    session: clientGetSession(),
+    targets: Q_TARGETS,
+    cols: Q_COLS,
+    paramGroups: Q_PARAM_GROUPS,
+    paramCols: Q_PARAM_COLS
+  };
+}
+
+function clientGetHierarchy(forceRefresh) {
   var cache = CacheService.getScriptCache();
   var cacheKey = 'quality_hierarchy_v1';
 
+  if (forceRefresh) {
+    cache.remove(cacheKey + '_chunks');
+  }
+
   try {
     var chunkCount = cache.get(cacheKey + '_chunks');
-    if (chunkCount) {
+    if (chunkCount && !forceRefresh) {
       var assembled = '';
       for (var c = 0; c < parseInt(chunkCount); c++) {
         var chunk = cache.get(cacheKey + '_chunk_' + c);
