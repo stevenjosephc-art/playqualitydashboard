@@ -7,55 +7,78 @@ var QUALITY_SHEET_NAME = 'QualityAudits';
 
 // ── SCHEMA MAPPING ────────────────────────────────────────────────────────
 
-var Q_COLS = {
-  CASE_ID: 0,            // A
-  ENTITY_GROUP: 1,       // B
-  AGENT_LDAP: 2,         // C
-  OPENING_CHANNEL: 3,    // D
-  REVIEW_DATE: 4,        // E
-  REVIEW_WEEK: 5,        // F
-  REVIEW_MONTH: 6,       // G
-  CASE_DATE: 7,          // H
-  CASE_WEEK: 8,          // I
-  CASE_MONTH: 9,         // J
-  CUSTOMER_CRITICAL: 10, // K
-  BUSINESS_CRITICAL: 11, // L
-  COMPLIANCE_CRITICAL: 12,// M
-  REVIEWER_COMMENTS: 13, // N
+var Q_COLS = null; // Will be mapped dynamically
 
-  // Customer Critical Parameters (O-W)
-  LISTENING: 14,
-  PROBING: 15,
-  COMPLETE_RESOLUTION: 16,
-  TROUBLESHOOTING: 17,
-  USER_EXPECTATIONS: 18,
-  EMPATHY: 19,
-  OWNERSHIP: 20,
-  REFUNDS: 21,
-  RESPONSIVENESS: 22,
+function getColMapping() {
+  if (Q_COLS) return Q_COLS;
 
-  // Business Critical Parameters (X-AD)
-  CONSULTS_ESCALATIONS: 23,
-  CASE_DETAILS: 24,
-  CATEGORIZATION: 25,
-  CSAT_REMINDER: 26,
-  CASE_STATE: 27,
-  OPENING_CLOSING: 28,
-  LANGUAGE_PROFICIENCY: 29,
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(QUALITY_SHEET_NAME);
+  if (!sheet) throw new Error("Sheet '" + QUALITY_SHEET_NAME + "' not found.");
 
-  // Compliance Critical Parameters (AE-AH)
-  AUTHENTICATION: 30,
-  GOOGLE_ONLY_INFO: 31,
-  PROFESSIONAL_CONDUCT: 32,
-  PAYMENT_COMPLAINTS: 33,
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var map = {};
 
-  TEAM: 36,              // AK
-  AGENT_WORKFLOW: 37,    // AL
+  var find = function(pattern) {
+    var p = pattern.toLowerCase();
+    // Prioritize exact match
+    for (var i = 0; i < headers.length; i++) {
+      if (String(headers[i]).toLowerCase() === p) return i;
+    }
+    // Fallback to partial match
+    for (var j = 0; j < headers.length; j++) {
+      if (String(headers[j]).toLowerCase().indexOf(p) !== -1) return j;
+    }
+    return -1;
+  };
 
-  SUPERVISOR: 66,        // BO
-  MANAGER: 67,           // BP
-  LOB: 69                // BR
-};
+  map.CASE_ID = find('case_id');
+  map.ENTITY_GROUP = find('billing_entity_group');
+  map.AGENT_LDAP = find('agent_ldap');
+  map.OPENING_CHANNEL = find('opening_channel');
+  map.REVIEW_DATE = find('review_date');
+  map.REVIEW_WEEK = find('review_week');
+  map.REVIEW_MONTH = find('review_month');
+  map.CASE_DATE = find('case_start_day');
+  map.CASE_WEEK = find('case_start_week');
+  map.CASE_MONTH = find('case_start_month');
+  map.CUSTOMER_CRITICAL = find('Customer');
+  map.BUSINESS_CRITICAL = find('Business');
+  map.COMPLIANCE_CRITICAL = find('compliance_critical'); // Adjust if named differently
+  map.REVIEWER_COMMENTS = find('reviewer_comments');
+
+  // Critical Parameters
+  map.LISTENING = find('listening');
+  map.PROBING = find('probing');
+  map.COMPLETE_RESOLUTION = find('complete_resolution');
+  map.TROUBLESHOOTING = find('troubleshooting');
+  map.USER_EXPECTATIONS = find('user_expectations');
+  map.EMPATHY = find('empathy');
+  map.OWNERSHIP = find('ownership');
+  map.REFUNDS = find('refunds');
+  map.RESPONSIVENESS = find('responsiveness');
+
+  map.CONSULTS_ESCALATIONS = find('consults_escalations');
+  map.CASE_DETAILS = find('case_details');
+  map.CATEGORIZATION = find('categorization');
+  map.CSAT_REMINDER = find('csat_reminder');
+  map.CASE_STATE = find('case_state');
+  map.OPENING_CLOSING = find('opening_closing');
+  map.LANGUAGE_PROFICIENCY = find('language_proficiency');
+
+  map.AUTHENTICATION = find('authentication');
+  map.GOOGLE_ONLY_INFO = find('google_only_info');
+  map.PROFESSIONAL_CONDUCT = find('professional_conduct');
+  map.PAYMENT_COMPLAINTS = find('payment_complaints');
+
+  map.TEAM = find('team');
+  map.SUPERVISOR = find('supervisor');
+  map.MANAGER = find('manager');
+  map.LOB = find('lob');
+
+  Q_COLS = map;
+  return map;
+}
 
 var Q_TARGETS = {
   CUSTOMER: 95,
@@ -106,23 +129,25 @@ function doGet() {
 function getRawQualityData(forceRefresh) {
   if (_MEMOIZED_RAW_DATA && !forceRefresh) return _MEMOIZED_RAW_DATA;
 
+  // Ensure mapping is done
+  getColMapping();
+
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) throw new Error("Active spreadsheet not found.");
 
   var sheet = ss.getSheetByName(QUALITY_SHEET_NAME);
   if (!sheet) throw new Error("Sheet '" + QUALITY_SHEET_NAME + "' not found.");
 
-  // Optimization: Read only the populated range
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
 
   var lastCol = sheet.getLastColumn();
   var raw = sheet.getRange(1, 1, lastRow, lastCol).getValues();
 
-  // Optimization: Remove headers and filter out empty rows immediately
   var data = [];
+  var caseIdIdx = Q_COLS.CASE_ID;
   for (var i = 1; i < raw.length; i++) {
-    if (raw[i][Q_COLS.CASE_ID]) { // Ensure row is not empty
+    if (caseIdIdx !== -1 && raw[i][caseIdIdx]) {
       data.push(raw[i]);
     }
   }
@@ -294,6 +319,11 @@ function clientGetAvailableQualityMonths(forceRefresh) {
 function clientGetMyQuality(ldap, month) {
   if (!ldap) ldap = Session.getActiveUser().getEmail().split('@')[0];
 
+  var cache = CacheService.getScriptCache();
+  var cacheKey = 'q_agent_' + normalizeLdap(ldap) + '_' + month;
+  var cached = cache.get(cacheKey);
+  if (cached) return JSON.parse(cached);
+
   var allRows = getRawQualityData();
   var filtered = [];
   for (var i = 0; i < allRows.length; i++) {
@@ -346,7 +376,7 @@ function clientGetMyQuality(ldap, month) {
     };
   });
 
-  return {
+  var result = {
     ldap: ldap,
     month: month,
     stats: stats,
@@ -354,9 +384,17 @@ function clientGetMyQuality(ldap, month) {
     caseLog: caseLog,
     hasData: filtered.length > 0
   };
+
+  try { cache.put(cacheKey, JSON.stringify(result), 1800); } catch(e) {}
+  return result;
 }
 
 function clientGetTeamQuality(supervisor, month) {
+  var cache = CacheService.getScriptCache();
+  var cacheKey = 'q_team_' + supervisor.replace(/\s/g, '_') + '_' + month;
+  var cached = cache.get(cacheKey);
+  if (cached) return JSON.parse(cached);
+
   var allRows = getRawQualityData();
   var filtered = [];
   for (var i = 0; i < allRows.length; i++) {
@@ -391,7 +429,7 @@ function clientGetTeamQuality(supervisor, month) {
     return (b.stats.customer + b.stats.business + b.stats.compliance) - (a.stats.customer + a.stats.business + a.stats.compliance);
   });
 
-  return {
+  var result = {
     supervisor: supervisor,
     month: month,
     stats: stats,
@@ -399,9 +437,17 @@ function clientGetTeamQuality(supervisor, month) {
     agents: agents,
     hasData: filtered.length > 0
   };
+
+  try { cache.put(cacheKey, JSON.stringify(result), 1800); } catch(e) {}
+  return result;
 }
 
 function clientGetClusterQuality(manager, month) {
+  var cache = CacheService.getScriptCache();
+  var cacheKey = 'q_cluster_' + manager.replace(/\s/g, '_') + '_' + month;
+  var cached = cache.get(cacheKey);
+  if (cached) return JSON.parse(cached);
+
   var allRows = getRawQualityData();
   var filtered = [];
   for (var i = 0; i < allRows.length; i++) {
@@ -436,7 +482,7 @@ function clientGetClusterQuality(manager, month) {
     return (b.stats.customer + b.stats.business + b.stats.compliance) - (a.stats.customer + a.stats.business + a.stats.compliance);
   });
 
-  return {
+  var result = {
     manager: manager,
     month: month,
     stats: stats,
@@ -444,6 +490,9 @@ function clientGetClusterQuality(manager, month) {
     supervisors: supervisors,
     hasData: filtered.length > 0
   };
+
+  try { cache.put(cacheKey, JSON.stringify(result), 1800); } catch(e) {}
+  return result;
 }
 
 function clientGetAllAgents() {
@@ -494,7 +543,7 @@ function clientGetInitialData(forceRefresh) {
     managers: hierarchy.managers,
     session: clientGetSession(),
     targets: Q_TARGETS,
-    cols: Q_COLS,
+    cols: getColMapping(), // Send the dynamic mapping to client
     paramGroups: Q_PARAM_GROUPS,
     paramCols: Q_PARAM_COLS
   };

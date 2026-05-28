@@ -8,111 +8,138 @@
   <!-- ApexCharts -->
   <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
   <!-- Google Fonts -->
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <!-- Phosphor Icons -->
   <script src="https://unpkg.com/@phosphor-icons/web"></script>
 
   <?!= HtmlService.createHtmlOutputFromFile('QualityView_CSS').getContent(); ?>
 </head>
-<body>
+<body class="apple-style">
   <div id="app-loader" class="q-loader-overlay">
     <div class="q-spinner"></div>
-    <div class="mt-16" style="margin-top: 16px; font-weight: 500; color: var(--apple-gray);">Loading Dashboard...</div>
+    <div class="loader-text">Initializing Dashboard...</div>
   </div>
 
-  <div id="quality-root" class="q-container" style="display:none">
-    <div class="q-topbar">
-      <div class="q-page-title">
-        <div class="q-icon-badge">
-          <i class="ph-bold ph-chart-line-up" style="color: white; font-size: 20px;"></i>
+  <div id="quality-root" class="app-layout" style="display:none">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="app-logo">
+          <i class="ph-fill ph-chart-pie-slice"></i>
         </div>
-        Quality Dashboard
+        <div class="app-name">QualityOS</div>
       </div>
-      <div class="q-controls" style="display: flex; gap: 12px; align-items: center;">
-        <select id="quality-month-picker" class="q-pill-select" onchange="onMonthChange(this.value)">
-          <option value="">Loading...</option>
-        </select>
-        <button class="refresh-btn" onclick="forceRefresh()" title="Force Refresh Data">
-          <i class="ph-bold ph-arrows-clockwise"></i>
-        </button>
-      </div>
-    </div>
 
-    <div class="q-tab-row">
-      <div class="q-tab active" id="tab-agent" onclick="switchTab('agent')">
-        <i class="ph ph-user q-tab-icon"></i>
-        <span>Agent Scores</span>
-      </div>
-      <div class="q-tab" id="tab-team" onclick="switchTab('team')">
-        <i class="ph ph-users q-tab-icon"></i>
-        <span>Team Scores</span>
-      </div>
-      <div class="q-tab" id="tab-cluster" onclick="switchTab('cluster')">
-        <i class="ph ph-buildings q-tab-icon"></i>
-        <span>Cluster Scores</span>
-      </div>
-    </div>
+      <nav class="sidebar-nav">
+        <div class="nav-group">
+          <div class="nav-item active" id="nav-agent" onclick="switchTab('agent')">
+            <i class="ph ph-user"></i>
+            <span>Agent Scores</span>
+          </div>
+          <div class="nav-item" id="nav-team" onclick="switchTab('team')">
+            <i class="ph ph-users"></i>
+            <span>Team Scores</span>
+          </div>
+          <div class="nav-item" id="nav-cluster" onclick="switchTab('cluster')">
+            <i class="ph ph-buildings"></i>
+            <span>Cluster Scores</span>
+          </div>
+        </div>
+      </nav>
 
-    <!-- Selectors -->
-    <div class="q-card" style="margin-bottom: 24px;">
-      <!-- Agent Selector -->
-      <div id="selector-agent">
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; align-items: end;">
-          <div>
-            <div class="stat-label" style="margin-bottom: 8px;">LOB</div>
-            <select id="lob-select" class="q-pill-select" style="width: 100%;" onchange="onLobChange(this.value)">
-              <option value="">Select LOB...</option>
-            </select>
+      <div class="sidebar-footer">
+        <div class="user-profile">
+          <div class="user-avatar" id="user-initials">--</div>
+          <div class="user-info">
+            <div class="user-name" id="user-ldap">User</div>
+            <div class="user-role">Quality Dashboard</div>
           </div>
-          <div>
-            <div class="stat-label" style="margin-bottom: 8px;">Supervisor</div>
-            <select id="agent-sup-select" class="q-pill-select" style="width: 100%;" onchange="onAgentSupChange(this.value)" disabled>
-              <option value="">Select Supervisor...</option>
-            </select>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <header class="content-header">
+        <div class="header-left">
+          <h1 id="page-title">Agent Performance</h1>
+          <p id="page-subtitle">Personal Quality Score Overview</p>
+        </div>
+        <div class="header-right">
+          <div class="control-group">
+            <div class="select-wrapper">
+              <i class="ph ph-calendar-blank"></i>
+              <select id="quality-month-picker" onchange="onMonthChange(this.value)">
+                <option value="">Loading...</option>
+              </select>
+            </div>
+            <button class="icon-button refresh-btn" onclick="forceRefresh()" title="Refresh Data">
+              <i class="ph ph-arrows-clockwise"></i>
+            </button>
           </div>
-          <div style="position: relative;">
-            <div class="stat-label" style="margin-bottom: 8px;">Agent LDAP</div>
-            <div class="q-search-container">
-              <i class="ph ph-magnifying-glass q-search-icon"></i>
-              <input type="text" id="ldap-search-input" class="q-search-input" placeholder="Search Agent..." autocomplete="off">
-              <div id="ldap-autocomplete-list" class="q-autocomplete-list" style="display: none;"></div>
+        </div>
+      </header>
+
+      <div class="scroll-container">
+        <!-- Selectors Section -->
+        <section class="selectors-section" id="selectors-container">
+          <!-- Agent Selectors -->
+          <div id="selector-agent" class="selector-row">
+            <div class="input-group">
+              <label>LOB</label>
+              <select id="lob-select" onchange="onLobChange(this.value)">
+                <option value="">Select LOB...</option>
+              </select>
+            </div>
+            <div class="input-group">
+              <label>Supervisor</label>
+              <select id="agent-sup-select" onchange="onAgentSupChange(this.value)" disabled>
+                <option value="">Select Supervisor...</option>
+              </select>
+            </div>
+            <div class="input-group search-group">
+              <label>Agent LDAP</label>
+              <div class="search-input-wrapper">
+                <i class="ph ph-magnifying-glass"></i>
+                <input type="text" id="ldap-search-input" placeholder="Search Agent..." autocomplete="off">
+                <div id="ldap-autocomplete-list" class="autocomplete-dropdown"></div>
+              </div>
             </div>
           </div>
+
+          <!-- Team Selectors -->
+          <div id="selector-team" class="selector-row" style="display:none">
+             <div class="input-group">
+                <label>LOB</label>
+                <select id="team-lob-select" onchange="onTeamLobChange(this.value)">
+                   <option value="">Select LOB...</option>
+                </select>
+             </div>
+             <div class="input-group">
+                <label>Supervisor</label>
+                <select id="team-sup-select" onchange="onTeamSupChange(this.value)" disabled>
+                   <option value="">Select Supervisor...</option>
+                </select>
+             </div>
+          </div>
+
+          <!-- Cluster Selectors -->
+          <div id="selector-cluster" class="selector-row" style="display:none">
+             <div class="input-group">
+                <label>Manager</label>
+                <select id="mgr-select" onchange="onMgrChange(this.value)">
+                   <option value="">Select Manager...</option>
+                </select>
+             </div>
+          </div>
+        </section>
+
+        <!-- Dashboard Content -->
+        <div id="view-content" class="dashboard-grid">
+           <!-- Dynamic Content Loads Here -->
         </div>
       </div>
-
-      <!-- Team Selector -->
-      <div id="selector-team" style="display:none">
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; align-items: end;">
-          <div>
-            <div class="stat-label" style="margin-bottom: 8px;">LOB</div>
-            <select id="team-lob-select" class="q-pill-select" style="width: 100%;" onchange="onTeamLobChange(this.value)">
-              <option value="">Select LOB...</option>
-            </select>
-          </div>
-          <div>
-            <div class="stat-label" style="margin-bottom: 8px;">Supervisor (Team)</div>
-            <select id="team-sup-select" class="q-pill-select" style="width: 100%;" onchange="onTeamSupChange(this.value)" disabled>
-              <option value="">Select Supervisor...</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      <!-- Cluster Selector -->
-      <div id="selector-cluster" style="display:none">
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; align-items: end;">
-          <div>
-            <div class="stat-label" style="margin-bottom: 8px;">Manager</div>
-            <select id="mgr-select" class="q-pill-select" style="width: 100%;" onchange="onMgrChange(this.value)">
-              <option value="">Select Manager...</option>
-            </select>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div id="view-content"></div>
+    </main>
   </div>
 
   <?!= HtmlService.createHtmlOutputFromFile('QualityView_JS').getContent(); ?>
