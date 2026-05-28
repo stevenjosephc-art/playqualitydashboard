@@ -31,6 +31,7 @@ async function initApp(forceRefresh = false) {
 
     populateMonthPicker();
     populateLobPicker();
+    populateMgrPicker();
     setupLDAPAutocomplete();
 
     // Initial fetch for the active user
@@ -39,7 +40,7 @@ async function initApp(forceRefresh = false) {
     document.getElementById('quality-root').style.display = 'block';
   } catch (e) {
     console.error('Init Error:', e);
-    alert('Failed to load dashboard data.');
+    alert('Failed to load dashboard data: ' + e.message + '\n' + (e.stack || ''));
   } finally {
     showLoader(false);
   }
@@ -55,9 +56,24 @@ function populateMonthPicker() {
 
 function populateLobPicker() {
   const lobSelect = document.getElementById('lob-select');
+  const teamLobSelect = document.getElementById('team-lob-select');
   const lobs = Object.keys(State.initialData.hierarchy);
-  lobSelect.innerHTML = '<option value="">Select LOB...</option>' +
+  const options = '<option value="">Select LOB...</option>' +
     lobs.map(l => `<option value="${l}">${l}</option>`).join('');
+
+  lobSelect.innerHTML = options;
+  teamLobSelect.innerHTML = options;
+}
+
+function populateMgrPicker() {
+  const mgrSelect = document.getElementById('mgr-select');
+  // Managers aren't explicitly in hierarchy currently, let's derive them if we had them,
+  // or use a placeholder for now since the schema has a MANAGER column.
+  // Actually, let's just use the unique managers from the backend.
+  google.script.run.withSuccessHandler(mgrs => {
+    mgrSelect.innerHTML = '<option value="">Select Manager...</option>' +
+      mgrs.map(m => `<option value="${m}">${m}</option>`).join('');
+  }).clientGetAllManagers();
 }
 
 function onMonthChange(val) {
@@ -100,6 +116,30 @@ function onAgentSupChange(val) {
 
 function onAgentChange(val) {
   State.selectedLdap = val;
+  fetchData();
+}
+
+function onTeamLobChange(val) {
+  State.selectedLob = val;
+  const supSelect = document.getElementById('team-sup-select');
+  if (val && State.initialData.hierarchy[val]) {
+    const sups = Object.keys(State.initialData.hierarchy[val]);
+    supSelect.innerHTML = '<option value="">Select Supervisor...</option>' +
+      sups.map(s => `<option value="${s}">${s}</option>`).join('');
+    supSelect.disabled = false;
+  } else {
+    supSelect.innerHTML = '<option value="">Select Supervisor...</option>';
+    supSelect.disabled = true;
+  }
+}
+
+function onTeamSupChange(val) {
+  State.selectedSup = val;
+  fetchData();
+}
+
+function onMgrChange(val) {
+  State.selectedMgr = val;
   fetchData();
 }
 
@@ -165,16 +205,21 @@ async function fetchData() {
   try {
     let result;
     if (State.currentTab === 'agent') {
+      if (!State.selectedLdap) throw new Error("Please select an agent.");
       result = await callServer('clientGetMyQuality', [State.selectedLdap, State.selectedMonth]);
     } else if (State.currentTab === 'team') {
-      // Implement team fetch
+      if (!State.selectedSup) throw new Error("Please select a supervisor.");
+      result = await callServer('clientGetTeamQuality', [State.selectedSup, State.selectedMonth]);
+    } else if (State.currentTab === 'cluster') {
+      if (!State.selectedMgr) throw new Error("Please select a manager.");
+      result = await callServer('clientGetClusterQuality', [State.selectedMgr, State.selectedMonth]);
     }
 
     State.filteredData = result;
     renderView();
   } catch (e) {
     console.error('Fetch Error:', e);
-    content.innerHTML = '<div class="q-card" style="text-align:center; color: var(--apple-red);">Error loading data.</div>';
+    content.innerHTML = `<div class="q-card" style="text-align:center; color: var(--apple-red);">Error loading data: ${e.message}</div>`;
   } finally {
     State.loading = false;
   }
@@ -183,6 +228,10 @@ async function fetchData() {
 function renderView() {
   if (State.currentTab === 'agent') {
     renderAgentView();
+  } else if (State.currentTab === 'team') {
+    renderTeamView();
+  } else if (State.currentTab === 'cluster') {
+    renderClusterView();
   }
 }
 
@@ -297,6 +346,112 @@ function renderAgentView() {
   // Render Charts
   renderTrendsChart(data.trends.daily);
   renderRadarChart(s);
+}
+
+function renderTeamView() {
+  const data = State.filteredData;
+  const container = document.getElementById('view-content');
+
+  if (!data || !data.hasData) {
+    container.innerHTML = `<div class="q-card" style="text-align:center; padding: 60px;">No Data Found for Team.</div>`;
+    return;
+  }
+
+  const s = data.stats;
+
+  container.innerHTML = `
+    <div class="q-grid-4">
+      ${renderScoreCard('TEAM CUSTOMER', s.customer, s.targets.CUSTOMER)}
+      ${renderScoreCard('TEAM BUSINESS', s.business, s.targets.BUSINESS)}
+      ${renderScoreCard('TEAM COMPLIANCE', s.compliance, s.targets.COMPLIANCE)}
+      <div class="q-card stat-card">
+        <div class="stat-label">Headcount</div>
+        <div class="stat-value">${data.agents.length}</div>
+        <div class="text-xs font-semibold mt-4">AGENTS AUDITED</div>
+      </div>
+    </div>
+
+    <div class="q-card">
+      <div class="q-card-title">Agent Rankings</div>
+      <div class="q-table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th>Customer</th>
+              <th>Business</th>
+              <th>Compliance</th>
+              <th>Avg Score</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.agents.map(a => `
+              <tr>
+                <td>${a.ldap}</td>
+                <td>${a.stats.customer.toFixed(1)}%</td>
+                <td>${a.stats.business.toFixed(1)}%</td>
+                <td>${a.stats.compliance.toFixed(1)}%</td>
+                <td class="font-bold">${((a.stats.customer + a.stats.business + a.stats.compliance)/3).toFixed(1)}%</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderClusterView() {
+  const data = State.filteredData;
+  const container = document.getElementById('view-content');
+
+  if (!data || !data.hasData) {
+    container.innerHTML = `<div class="q-card" style="text-align:center; padding: 60px;">No Data Found for Cluster.</div>`;
+    return;
+  }
+
+  const s = data.stats;
+
+  container.innerHTML = `
+    <div class="q-grid-4">
+      ${renderScoreCard('CLUSTER CUSTOMER', s.customer, s.targets.CUSTOMER)}
+      ${renderScoreCard('CLUSTER BUSINESS', s.business, s.targets.BUSINESS)}
+      ${renderScoreCard('CLUSTER COMPLIANCE', s.compliance, s.targets.COMPLIANCE)}
+      <div class="q-card stat-card">
+        <div class="stat-label">Teams</div>
+        <div class="stat-value">${data.supervisors.length}</div>
+        <div class="text-xs font-semibold mt-4">SUPERVISORS</div>
+      </div>
+    </div>
+
+    <div class="q-card">
+      <div class="q-card-title">Supervisor Rankings</div>
+      <div class="q-table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Supervisor</th>
+              <th>Customer</th>
+              <th>Business</th>
+              <th>Compliance</th>
+              <th>Avg Score</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.supervisors.map(sup => `
+              <tr>
+                <td>${sup.name}</td>
+                <td>${sup.stats.customer.toFixed(1)}%</td>
+                <td>${sup.stats.business.toFixed(1)}%</td>
+                <td>${sup.stats.compliance.toFixed(1)}%</td>
+                <td class="font-bold">${((sup.stats.customer + sup.stats.business + sup.stats.compliance)/3).toFixed(1)}%</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
 }
 
 function renderScoreCard(label, score, target) {

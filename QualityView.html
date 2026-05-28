@@ -53,27 +53,60 @@
       </div>
     </div>
 
-    <!-- Agent Selector -->
-    <div id="selector-agent" class="q-card" style="margin-bottom: 24px;">
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; align-items: end;">
-        <div>
-          <div class="stat-label" style="margin-bottom: 8px;">LOB</div>
-          <select id="lob-select" class="q-pill-select" style="width: 100%;" onchange="onLobChange(this.value)">
-            <option value="">Select LOB...</option>
-          </select>
+    <!-- Selectors -->
+    <div class="q-card" style="margin-bottom: 24px;">
+      <!-- Agent Selector -->
+      <div id="selector-agent">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; align-items: end;">
+          <div>
+            <div class="stat-label" style="margin-bottom: 8px;">LOB</div>
+            <select id="lob-select" class="q-pill-select" style="width: 100%;" onchange="onLobChange(this.value)">
+              <option value="">Select LOB...</option>
+            </select>
+          </div>
+          <div>
+            <div class="stat-label" style="margin-bottom: 8px;">Supervisor</div>
+            <select id="agent-sup-select" class="q-pill-select" style="width: 100%;" onchange="onAgentSupChange(this.value)" disabled>
+              <option value="">Select Supervisor...</option>
+            </select>
+          </div>
+          <div style="position: relative;">
+            <div class="stat-label" style="margin-bottom: 8px;">Agent LDAP</div>
+            <div class="q-search-container">
+              <i class="ph ph-magnifying-glass q-search-icon"></i>
+              <input type="text" id="ldap-search-input" class="q-search-input" placeholder="Search Agent..." autocomplete="off">
+              <div id="ldap-autocomplete-list" class="q-autocomplete-list" style="display: none;"></div>
+            </div>
+          </div>
         </div>
-        <div>
-          <div class="stat-label" style="margin-bottom: 8px;">Supervisor</div>
-          <select id="agent-sup-select" class="q-pill-select" style="width: 100%;" onchange="onAgentSupChange(this.value)" disabled>
-            <option value="">Select Supervisor...</option>
-          </select>
+      </div>
+
+      <!-- Team Selector -->
+      <div id="selector-team" style="display:none">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; align-items: end;">
+          <div>
+            <div class="stat-label" style="margin-bottom: 8px;">LOB</div>
+            <select id="team-lob-select" class="q-pill-select" style="width: 100%;" onchange="onTeamLobChange(this.value)">
+              <option value="">Select LOB...</option>
+            </select>
+          </div>
+          <div>
+            <div class="stat-label" style="margin-bottom: 8px;">Supervisor (Team)</div>
+            <select id="team-sup-select" class="q-pill-select" style="width: 100%;" onchange="onTeamSupChange(this.value)" disabled>
+              <option value="">Select Supervisor...</option>
+            </select>
+          </div>
         </div>
-        <div style="position: relative;">
-          <div class="stat-label" style="margin-bottom: 8px;">Agent LDAP</div>
-          <div class="q-search-container">
-            <i class="ph ph-magnifying-glass q-search-icon"></i>
-            <input type="text" id="ldap-search-input" class="q-search-input" placeholder="Search Agent..." autocomplete="off">
-            <div id="ldap-autocomplete-list" class="q-autocomplete-list" style="display: none;"></div>
+      </div>
+
+      <!-- Cluster Selector -->
+      <div id="selector-cluster" style="display:none">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; align-items: end;">
+          <div>
+            <div class="stat-label" style="margin-bottom: 8px;">Manager</div>
+            <select id="mgr-select" class="q-pill-select" style="width: 100%;" onchange="onMgrChange(this.value)">
+              <option value="">Select Manager...</option>
+            </select>
           </div>
         </div>
       </div>
