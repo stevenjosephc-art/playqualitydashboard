@@ -19,8 +19,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function initApp(forceRefresh = false) {
   showLoader(true);
+  console.log('Initializing Dashboard...');
   try {
     const data = await callServer('clientGetInitialData', [forceRefresh]);
+    console.log('Initial Data Received:', data);
     State.initialData = data;
 
     // Set initial selections
@@ -34,13 +36,21 @@ async function initApp(forceRefresh = false) {
     populateMgrPicker();
     setupLDAPAutocomplete();
 
-    // Initial fetch for the active user
-    await fetchData();
-
+    // Show root early so loader is within the UI context
     document.getElementById('quality-root').style.display = 'block';
+
+    // Initial fetch for the active user
+    try {
+      await fetchData();
+    } catch (fetchErr) {
+      console.warn('Initial data fetch failed (user might have no data):', fetchErr);
+    }
+
   } catch (e) {
     console.error('Init Error:', e);
     alert('Failed to load dashboard data: ' + e.message + '\n' + (e.stack || ''));
+    // Ensure we hide loader even on error
+    showLoader(false);
   } finally {
     showLoader(false);
   }
@@ -67,13 +77,10 @@ function populateLobPicker() {
 
 function populateMgrPicker() {
   const mgrSelect = document.getElementById('mgr-select');
-  // Managers aren't explicitly in hierarchy currently, let's derive them if we had them,
-  // or use a placeholder for now since the schema has a MANAGER column.
-  // Actually, let's just use the unique managers from the backend.
-  google.script.run.withSuccessHandler(mgrs => {
-    mgrSelect.innerHTML = '<option value="">Select Manager...</option>' +
-      mgrs.map(m => `<option value="${m}">${m}</option>`).join('');
-  }).clientGetAllManagers();
+  if (!mgrSelect || !State.initialData.managers) return;
+
+  mgrSelect.innerHTML = '<option value="">Select Manager...</option>' +
+    State.initialData.managers.map(m => `<option value="${m}">${m}</option>`).join('');
 }
 
 function onMonthChange(val) {

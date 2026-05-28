@@ -98,62 +98,36 @@ function doGet() {
 
 // ── DATA LOADING ──────────────────────────────────────────────────────────
 
+/**
+ * Fetches raw data from the spreadsheet.
+ * Optimization: We skip CacheService for the full raw dataset if it's large,
+ * as the overhead of 100+ cache chunks often exceeds the time to read directly from the Sheet.
+ */
 function getRawQualityData(forceRefresh) {
   if (_MEMOIZED_RAW_DATA && !forceRefresh) return _MEMOIZED_RAW_DATA;
 
-  var cache = CacheService.getScriptCache();
-  var cacheKey = 'quality_raw_v3';
-
-  if (!forceRefresh) {
-    try {
-      var chunkCount = cache.get(cacheKey + '_chunks');
-      if (chunkCount) {
-        var assembled = '';
-        for (var c = 0; c < parseInt(chunkCount); c++) {
-          var chunk = cache.get(cacheKey + '_chunk_' + c);
-          if (!chunk) { assembled = null; break; }
-          assembled += chunk;
-        }
-        if (assembled) {
-          _MEMOIZED_RAW_DATA = JSON.parse(assembled);
-          return _MEMOIZED_RAW_DATA;
-        }
-      }
-    } catch(e) {
-      Logger.log('Cache read error: ' + e.message);
-    }
-  }
-
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss) throw new Error("Active spreadsheet not found. Ensure the script is bound to a Google Sheet.");
+  if (!ss) throw new Error("Active spreadsheet not found.");
 
   var sheet = ss.getSheetByName(QUALITY_SHEET_NAME);
-  if (!sheet) throw new Error("Sheet '" + QUALITY_SHEET_NAME + "' not found. Available sheets: " + ss.getSheets().map(function(s){ return s.getName(); }).join(", "));
+  if (!sheet) throw new Error("Sheet '" + QUALITY_SHEET_NAME + "' not found.");
 
-  var raw = sheet.getDataRange().getValues();
-  if (raw.length < 2) {
-    Logger.log('Sheet is empty or has only headers.');
-    return [];
+  // Optimization: Read only the populated range
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+
+  var lastCol = sheet.getLastColumn();
+  var raw = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+
+  // Optimization: Remove headers and filter out empty rows immediately
+  var data = [];
+  for (var i = 1; i < raw.length; i++) {
+    if (raw[i][Q_COLS.CASE_ID]) { // Ensure row is not empty
+      data.push(raw[i]);
+    }
   }
 
-  var data = raw.slice(1);
   _MEMOIZED_RAW_DATA = data;
-
-  try {
-    var serialized = JSON.stringify(data);
-    var chunkSize = 90000;
-    var chunks = [];
-    for (var ci = 0; ci < serialized.length; ci += chunkSize) {
-      chunks.push(serialized.slice(ci, ci + chunkSize));
-    }
-    for (var j = 0; j < chunks.length; j++) {
-      cache.put(cacheKey + '_chunk_' + j, chunks[j], 600);
-    }
-    cache.put(cacheKey + '_chunks', String(chunks.length), 600);
-  } catch(e) {
-    Logger.log('Cache write error: ' + e.message);
-  }
-
   return data;
 }
 
@@ -513,9 +487,11 @@ function clientGetSession() {
 }
 
 function clientGetInitialData(forceRefresh) {
+  var hierarchy = clientGetHierarchy(forceRefresh);
   return {
     months: clientGetAvailableQualityMonths(forceRefresh),
-    hierarchy: clientGetHierarchy(forceRefresh),
+    hierarchy: hierarchy.tree,
+    managers: hierarchy.managers,
     session: clientGetSession(),
     targets: Q_TARGETS,
     cols: Q_COLS,
@@ -524,74 +500,58 @@ function clientGetInitialData(forceRefresh) {
   };
 }
 
+/**
+ * Optimized Hierarchy fetching.
+ * Caches the small result set instead of the whole raw data.
+ */
 function clientGetHierarchy(forceRefresh) {
   var cache = CacheService.getScriptCache();
-  var cacheKey = 'quality_hierarchy_v1';
+  var cacheKey = 'quality_hierarchy_v2';
 
-  if (forceRefresh) {
-    cache.remove(cacheKey + '_chunks');
-  }
-
-  try {
-    var chunkCount = cache.get(cacheKey + '_chunks');
-    if (chunkCount && !forceRefresh) {
-      var assembled = '';
-      for (var c = 0; c < parseInt(chunkCount); c++) {
-        var chunk = cache.get(cacheKey + '_chunk_' + c);
-        if (!chunk) { assembled = null; break; }
-        assembled += chunk;
-      }
-      if (assembled) return JSON.parse(assembled);
-    }
-  } catch(e) {
-    Logger.log('Hierarchy cache read error: ' + e.message);
+  if (!forceRefresh) {
+    var cached = cache.get(cacheKey);
+    if (cached) return JSON.parse(cached);
   }
 
   var rows = getRawQualityData();
   var hierarchy = {};
+  var managers = {};
 
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
     var lob = String(r[Q_COLS.LOB] || 'Unknown LOB').trim();
     var sup = String(r[Q_COLS.SUPERVISOR] || 'Unknown Supervisor').trim();
     var agent = normalizeLdap(r[Q_COLS.AGENT_LDAP]);
+    var mgr = String(r[Q_COLS.MANAGER] || '').trim();
 
-    if (!agent) continue;
-
-    if (!hierarchy[lob]) hierarchy[lob] = {};
-    if (!hierarchy[lob][sup]) hierarchy[lob][sup] = {};
-
-    // Using an object as a set for agents to ensure uniqueness
-    hierarchy[lob][sup][agent] = true;
+    if (agent) {
+      if (!hierarchy[lob]) hierarchy[lob] = {};
+      if (!hierarchy[lob][sup]) hierarchy[lob][sup] = {};
+      hierarchy[lob][sup][agent] = true;
+    }
+    if (mgr) managers[mgr] = true;
   }
 
-  // Convert Agent sets to sorted arrays
-  var result = {};
+  // Format Hierarchy
+  var result = {
+    tree: {},
+    managers: Object.keys(managers).sort()
+  };
+
   var lobs = Object.keys(hierarchy).sort();
   for (var j = 0; j < lobs.length; j++) {
     var l = lobs[j];
-    result[l] = {};
+    result.tree[l] = {};
     var sups = Object.keys(hierarchy[l]).sort();
     for (var k = 0; k < sups.length; k++) {
       var s = sups[k];
-      result[l][s] = Object.keys(hierarchy[l][s]).sort();
+      result.tree[l][s] = Object.keys(hierarchy[l][s]).sort();
     }
   }
 
   try {
-    var serialized = JSON.stringify(result);
-    var chunkSize = 90000;
-    var chunks = [];
-    for (var ci = 0; ci < serialized.length; ci += chunkSize) {
-      chunks.push(serialized.slice(ci, ci + chunkSize));
-    }
-    for (var j = 0; j < chunks.length; j++) {
-      cache.put(cacheKey + '_chunk_' + j, chunks[j], 21600);
-    }
-    cache.put(cacheKey + '_chunks', String(chunks.length), 21600);
-  } catch(e) {
-    Logger.log('Hierarchy cache write error: ' + e.message);
-  }
+    cache.put(cacheKey, JSON.stringify(result), 21600);
+  } catch(e) {}
 
   return result;
 }
