@@ -229,7 +229,7 @@ function getAllAgentsFromHierarchy() {
   return Array.from(agents).sort();
 }
 
-async function fetchData() {
+async function fetchData(forceRefresh = false) {
   if (State.loading) return;
   State.loading = true;
 
@@ -242,13 +242,13 @@ async function fetchData() {
     let result;
     if (State.currentTab === 'agent') {
       if (!State.selectedLdap) throw new Error("Please select an agent.");
-      result = await callServer('clientGetMyQuality', [State.selectedLdap, State.selectedMonth]);
+      result = await callServer('clientGetMyQuality', [State.selectedLdap, State.selectedMonth, forceRefresh]);
     } else if (State.currentTab === 'team') {
       if (!State.selectedSup) throw new Error("Please select a supervisor.");
-      result = await callServer('clientGetTeamQuality', [State.selectedSup, State.selectedMonth]);
+      result = await callServer('clientGetTeamQuality', [State.selectedSup, State.selectedMonth, forceRefresh]);
     } else if (State.currentTab === 'cluster') {
       if (!State.selectedMgr) throw new Error("Please select a manager.");
-      result = await callServer('clientGetClusterQuality', [State.selectedMgr, State.selectedMonth]);
+      result = await callServer('clientGetClusterQuality', [State.selectedMgr, State.selectedMonth, forceRefresh]);
     }
 
     State.filteredData = result;
@@ -325,11 +325,18 @@ function renderAgentView() {
 
     <!-- Case Breakdown -->
     <div class="card grid-span-4">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
             <div class="card-title" style="margin:0;">Audit Breakdown</div>
-            <div class="search-input-wrapper" style="width: 250px;">
-                <i class="ph ph-magnifying-glass"></i>
-                <input type="text" id="case-search-input" placeholder="Search Case ID..." oninput="filterCaseTable(this.value)">
+            <div style="display:flex; gap: 15px; align-items:center;">
+                <label class="toggle-switch">
+                    <input type="checkbox" id="failures-only-toggle" onchange="filterCaseTable()">
+                    <span class="toggle-slider"></span>
+                    <span class="toggle-label">Show Failures Only</span>
+                </label>
+                <div class="search-input-wrapper" style="width: 250px;">
+                    <i class="ph ph-magnifying-glass"></i>
+                    <input type="text" id="case-search-input" placeholder="Search Case ID..." oninput="filterCaseTable()">
+                </div>
             </div>
         </div>
         <div class="case-table-container">
@@ -345,16 +352,22 @@ function renderAgentView() {
                     </tr>
                 </thead>
                 <tbody id="case-table-body">
-                    ${data.caseLog.map(c => `
-                        <tr>
-                            <td>${c.reviewDate}</td>
-                            <td><span class="case-id-badge">${c.caseId}</span></td>
-                            <td><span class="score-tag ${c.customer >= 95 ? 'tag-pass' : 'tag-fail'}">${c.customer.toFixed(1)}%</span></td>
-                            <td><span class="score-tag ${c.business >= 90 ? 'tag-pass' : 'tag-fail'}">${c.business.toFixed(1)}%</span></td>
-                            <td><span class="score-tag ${c.compliance >= 99.5 ? 'tag-pass' : 'tag-fail'}">${c.compliance.toFixed(1)}%</span></td>
-                            <td class="comment-cell" title="${c.comments}">${c.comments}</td>
-                        </tr>
-                    `).join('')}
+                    ${data.caseLog.map(c => {
+                        const cust = Number(c.customer) || 0;
+                        const bus = Number(c.business) || 0;
+                        const comp = Number(c.compliance) || 0;
+                        const isFail = cust < 95 || bus < 90 || comp < 99.5;
+                        return `
+                            <tr data-fail="${isFail}">
+                                <td>${c.reviewDate}</td>
+                                <td><span class="case-id-badge">${c.caseId}</span></td>
+                                <td><span class="score-tag ${cust >= 95 ? 'tag-pass' : 'tag-fail'}">${cust.toFixed(1)}%</span></td>
+                                <td><span class="score-tag ${bus >= 90 ? 'tag-pass' : 'tag-fail'}">${bus.toFixed(1)}%</span></td>
+                                <td><span class="score-tag ${comp >= 99.5 ? 'tag-pass' : 'tag-fail'}">${comp.toFixed(1)}%</span></td>
+                                <td class="comment-cell" title="${c.comments}">${c.comments}</td>
+                            </tr>
+                        `;
+                    }).join('')}
                 </tbody>
             </table>
         </div>
@@ -364,12 +377,19 @@ function renderAgentView() {
   renderCharts(data);
 }
 
-function filterCaseTable(val) {
-    const query = val.toLowerCase();
+function filterCaseTable() {
+    const query = (document.getElementById('case-search-input')?.value || '').toLowerCase();
+    const failuresOnly = document.getElementById('failures-only-toggle')?.checked || false;
     const rows = document.querySelectorAll('#case-table-body tr');
+
     rows.forEach(row => {
         const caseId = row.querySelector('.case-id-badge').textContent.toLowerCase();
-        row.style.display = caseId.includes(query) ? '' : 'none';
+        const isFail = row.getAttribute('data-fail') === 'true';
+
+        const matchesQuery = caseId.includes(query);
+        const matchesFailFilter = !failuresOnly || isFail;
+
+        row.style.display = (matchesQuery && matchesFailFilter) ? '' : 'none';
     });
 }
 
@@ -430,42 +450,48 @@ function renderCharts(data) {
             axisTicks: { show: false },
             labels: { style: { colors: '#86868B' } }
         },
-        yaxis: { labels: { style: { colors: '#86868B' } } },
+        yaxis: { labels: { style: { colors: '#86868B' } }, min: 0, max: 100 },
         tooltip: { theme: 'light', x: { show: false } }
     };
 
     // Trends
-    new ApexCharts(document.querySelector("#chart-trends"), {
-        ...chartOptions,
-        series: [
-            { name: 'Customer', data: data.trends.weekly.map(d => (d.customer || 0).toFixed(1)) },
-            { name: 'Business', data: data.trends.weekly.map(d => (d.business || 0).toFixed(1)) },
-            { name: 'Compliance', data: data.trends.weekly.map(d => (d.compliance || 0).toFixed(1)) }
-        ],
-        chart: { ...chartOptions.chart, type: 'area' },
-        colors: ['#007AFF', '#34C759', '#FF3B30'],
-        xaxis: { ...chartOptions.xaxis, categories: data.trends.weekly.map(d => d.label) },
-        fill: {
-            type: 'gradient',
-            gradient: {
-                shadeIntensity: 1,
-                opacityFrom: 0.3,
-                opacityTo: 0.05,
-                stops: [0, 90, 100]
+    const trendsEl = document.querySelector("#chart-trends");
+    if (trendsEl && data.trends && data.trends.weekly) {
+        new ApexCharts(trendsEl, {
+            ...chartOptions,
+            series: [
+                { name: 'Customer', data: data.trends.weekly.map(d => Number(d.customer || 0).toFixed(1)) },
+                { name: 'Business', data: data.trends.weekly.map(d => Number(d.business || 0).toFixed(1)) },
+                { name: 'Compliance', data: data.trends.weekly.map(d => Number(d.compliance || 0).toFixed(1)) }
+            ],
+            chart: { ...chartOptions.chart, type: 'area' },
+            colors: ['#007AFF', '#34C759', '#FF3B30'],
+            xaxis: { ...chartOptions.xaxis, categories: data.trends.weekly.map(d => d.label) },
+            fill: {
+                type: 'gradient',
+                gradient: {
+                    shadeIntensity: 1,
+                    opacityFrom: 0.3,
+                    opacityTo: 0.05,
+                    stops: [0, 90, 100]
+                }
             }
-        }
-    }).render();
+        }).render();
+    }
 
     // Radar
-    new ApexCharts(document.querySelector("#chart-radar"), {
-        ...chartOptions,
-        series: [{ name: 'Current Score', data: [(s.customer || 0).toFixed(1), (s.business || 0).toFixed(1), (s.compliance || 0).toFixed(1)] }],
-        chart: { ...chartOptions.chart, type: 'radar', height: 350 },
-        xaxis: { categories: ['Customer', 'Business', 'Compliance'] },
-        colors: ['#007AFF'],
-        fill: { opacity: 0.2 },
-        markers: { size: 4, colors: ['#007AFF'], strokeWidth: 2, hover: { size: 7 } }
-    }).render();
+    const radarEl = document.querySelector("#chart-radar");
+    if (radarEl) {
+        new ApexCharts(radarEl, {
+            ...chartOptions,
+            series: [{ name: 'Current Score', data: [Number(s.customer || 0).toFixed(1), Number(s.business || 0).toFixed(1), Number(s.compliance || 0).toFixed(1)] }],
+            chart: { ...chartOptions.chart, type: 'radar', height: 350 },
+            xaxis: { categories: ['Customer', 'Business', 'Compliance'] },
+            colors: ['#007AFF'],
+            fill: { opacity: 0.2 },
+            markers: { size: 4, colors: ['#007AFF'], strokeWidth: 2, hover: { size: 7 } }
+        }).render();
+    }
 }
 
 function renderTeamView() {
@@ -487,28 +513,35 @@ function renderTeamView() {
     const s = data.stats;
     const avg = ((s.customer || 0) + (s.business || 0) + (s.compliance || 0)) / 3;
     container.innerHTML = `
-        <div class="card">${renderMiniStat('Team Avg', avg.toFixed(1) + '%')}</div>
+        <div class="card">${renderMiniStat('Team Avg', Number(avg || 0).toFixed(1) + '%')}</div>
         ${renderPremiumScoreCard('Customer', s.customer || 0, s.targets.CUSTOMER)}
         ${renderPremiumScoreCard('Business', s.business || 0, s.targets.BUSINESS)}
         ${renderPremiumScoreCard('Compliance', s.compliance || 0, s.targets.COMPLIANCE)}
 
         <div class="card grid-span-3">
-            <div class="card-title">Agent Rankings</div>
-            <div class="ranking-list">
-                ${data.agents.map((a, i) => `
-                    <div class="ranking-item">
-                        <div class="rank-num">${i+1}</div>
-                        <div class="rank-ldap">${a.ldap}</div>
-                        <div class="rank-bar-bg"><div class="rank-bar-fill" style="width: ${(((a.stats.customer || 0) + (a.stats.business || 0) + (a.stats.compliance || 0))/3)}%"></div></div>
-                        <div class="rank-score">${(((a.stats.customer || 0) + (a.stats.business || 0) + (a.stats.compliance || 0))/3).toFixed(1)}%</div>
-                    </div>
-                `).join('')}
-            </div>
+            <div class="card-title">Team Performance Trends</div>
+            <div id="chart-trends" style="height: 350px;"></div>
         </div>
-
         <div class="card">
             <div class="card-title">Team Distribution</div>
             <div id="chart-radar" style="height: 350px;"></div>
+        </div>
+
+        <div class="card grid-span-4">
+            <div class="card-title">Agent Rankings</div>
+            <div class="ranking-list">
+                ${data.agents.map((a, i) => {
+                    const agentAvg = ((Number(a.stats.customer) || 0) + (Number(a.stats.business) || 0) + (Number(a.stats.compliance) || 0)) / 3;
+                    return `
+                        <div class="ranking-item">
+                            <div class="rank-num">${i+1}</div>
+                            <div class="rank-ldap">${a.ldap}</div>
+                            <div class="rank-bar-bg"><div class="rank-bar-fill" style="width: ${agentAvg}%"></div></div>
+                            <div class="rank-score">${agentAvg.toFixed(1)}%</div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
         </div>
     `;
     renderCharts(data);
@@ -528,25 +561,38 @@ function renderClusterView() {
     container.innerHTML = `
         <div class="card grid-span-4" style="display:grid; grid-template-columns: repeat(4, 1fr); gap: 20px;">
             ${renderMiniStat('Total Audits', s.count || 0)}
-            ${renderMiniStat('Cust. Avg', (s.customer || 0).toFixed(1) + '%')}
-            ${renderMiniStat('Bus. Avg', (s.business || 0).toFixed(1) + '%')}
-            ${renderMiniStat('Comp. Avg', (s.compliance || 0).toFixed(1) + '%')}
+            ${renderMiniStat('Cust. Avg', Number(s.customer || 0).toFixed(1) + '%')}
+            ${renderMiniStat('Bus. Avg', Number(s.business || 0).toFixed(1) + '%')}
+            ${renderMiniStat('Comp. Avg', Number(s.compliance || 0).toFixed(1) + '%')}
+        </div>
+
+        <div class="card grid-span-3">
+            <div class="card-title">Cluster Performance Trends</div>
+            <div id="chart-trends" style="height: 350px;"></div>
+        </div>
+        <div class="card">
+            <div class="card-title">Cluster Distribution</div>
+            <div id="chart-radar" style="height: 350px;"></div>
         </div>
 
         <div class="card grid-span-4">
             <div class="card-title">Supervisor Rankings</div>
             <div class="ranking-list">
-                ${data.supervisors.map((sup, i) => `
-                    <div class="ranking-item">
-                        <div class="rank-num">${i+1}</div>
-                        <div class="rank-ldap" style="width: 200px;">${sup.name}</div>
-                        <div class="rank-bar-bg"><div class="rank-bar-fill" style="width: ${(((sup.stats.customer || 0) + (sup.stats.business || 0) + (sup.stats.compliance || 0))/3)}%; background: var(--apple-blue);"></div></div>
-                        <div class="rank-score">${(((sup.stats.customer || 0) + (sup.stats.business || 0) + (sup.stats.compliance || 0))/3).toFixed(1)}%</div>
-                    </div>
-                `).join('')}
+                ${data.supervisors.map((sup, i) => {
+                    const supAvg = ((Number(sup.stats.customer) || 0) + (Number(sup.stats.business) || 0) + (Number(sup.stats.compliance) || 0)) / 3;
+                    return `
+                        <div class="ranking-item">
+                            <div class="rank-num">${i+1}</div>
+                            <div class="rank-ldap" style="width: 200px;">${sup.name}</div>
+                            <div class="rank-bar-bg"><div class="rank-bar-fill" style="width: ${supAvg}%; background: var(--apple-blue);"></div></div>
+                            <div class="rank-score">${supAvg.toFixed(1)}%</div>
+                        </div>
+                    `;
+                }).join('')}
             </div>
         </div>
     `;
+    renderCharts(data);
 }
 
 function renderMiniStat(label, val) {
@@ -610,6 +656,10 @@ function switchTab(tab) {
 function forceRefresh() {
   const btn = document.querySelector('.refresh-btn');
   if (btn) btn.classList.add('spinning');
+
+  // Clear frontend session cache first
+  try { sessionStorage.removeItem('q_initial_data'); } catch(e) {}
+
   initApp(true).finally(() => {
     if (btn) btn.classList.remove('spinning');
   });

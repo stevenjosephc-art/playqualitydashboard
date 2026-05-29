@@ -4,6 +4,7 @@
 // ============================================================
 
 var QUALITY_SHEET_NAME = 'QualityAudits';
+var CACHE_VERSION = 'v1.1'; // Global cache invalidation
 
 // ── SCHEMA MAPPING ────────────────────────────────────────────────────────
 
@@ -168,6 +169,18 @@ function getColumnsFromSheet(colIndices, forceRefresh) {
 }
 
 function getRawQualityData(forceRefresh) {
+  var start = new Date().getTime();
+  if (_MEMOIZED_RAW_DATA && !forceRefresh) return _MEMOIZED_RAW_DATA;
+
+  getColMapping();
+
+  var indices = [];
+  for (var key in Q_COLS) {
+    if (Q_COLS[key] !== -1) indices.push(Q_COLS[key]);
+  }
+  var maxCol = Math.max.apply(null, indices) + 1;
+
+function getRawQualityData(forceRefresh) {
   if (_MEMOIZED_RAW_DATA && !forceRefresh) return _MEMOIZED_RAW_DATA;
 
   getColMapping();
@@ -180,9 +193,7 @@ function getRawQualityData(forceRefresh) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
 
-  // Optimization: Still get all columns for full audit aggregation,
-  // but Apps Script is fastest with a single getValues() call.
-  var raw = sheet.getDataRange().getValues();
+  var raw = sheet.getRange(1, 1, lastRow, maxCol).getValues();
   var data = [];
   var caseIdIdx = Q_COLS.CASE_ID;
 
@@ -193,6 +204,8 @@ function getRawQualityData(forceRefresh) {
   }
 
   _MEMOIZED_RAW_DATA = data;
+  var end = new Date().getTime();
+  Logger.log('getRawQualityData took ' + (end - start) + 'ms for ' + data.length + ' rows.');
   return data;
 }
 
@@ -357,15 +370,18 @@ function clientGetAvailableQualityMonths(forceRefresh) {
   return getAvailableQualityMonths();
 }
 
-function clientGetMyQuality(ldap, month) {
+function clientGetMyQuality(ldap, month, forceRefresh) {
   if (!ldap) ldap = Session.getActiveUser().getEmail().split('@')[0];
 
   var cache = CacheService.getScriptCache();
-  var cacheKey = 'q_agent_' + normalizeLdap(ldap) + '_' + month;
-  var cached = cache.get(cacheKey);
-  if (cached) return JSON.parse(cached);
+  var cacheKey = 'q_agent_' + normalizeLdap(ldap) + '_' + month + '_' + CACHE_VERSION;
 
-  var allRows = getRawQualityData();
+  if (!forceRefresh) {
+    var cached = cache.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+  }
+
+  var allRows = getRawQualityData(forceRefresh);
   var filtered = [];
   for (var i = 0; i < allRows.length; i++) {
     var r = allRows[i];
@@ -426,17 +442,20 @@ function clientGetMyQuality(ldap, month) {
     hasData: filtered.length > 0
   };
 
-  try { cache.put(cacheKey, JSON.stringify(result), 1800); } catch(e) {}
+  try { cache.put(cacheKey, JSON.stringify(result), 21600); } catch(e) {} // 6 hours
   return result;
 }
 
-function clientGetTeamQuality(supervisor, month) {
+function clientGetTeamQuality(supervisor, month, forceRefresh) {
   var cache = CacheService.getScriptCache();
-  var cacheKey = 'q_team_' + supervisor.replace(/\s/g, '_') + '_' + month;
-  var cached = cache.get(cacheKey);
-  if (cached) return JSON.parse(cached);
+  var cacheKey = 'q_team_' + supervisor.replace(/\s/g, '_') + '_' + month + '_' + CACHE_VERSION;
 
-  var allRows = getRawQualityData();
+  if (!forceRefresh) {
+    var cached = cache.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+  }
+
+  var allRows = getRawQualityData(forceRefresh);
   var filtered = [];
   for (var i = 0; i < allRows.length; i++) {
     var r = allRows[i];
@@ -479,17 +498,20 @@ function clientGetTeamQuality(supervisor, month) {
     hasData: filtered.length > 0
   };
 
-  try { cache.put(cacheKey, JSON.stringify(result), 1800); } catch(e) {}
+  try { cache.put(cacheKey, JSON.stringify(result), 21600); } catch(e) {} // 6 hours
   return result;
 }
 
-function clientGetClusterQuality(manager, month) {
+function clientGetClusterQuality(manager, month, forceRefresh) {
   var cache = CacheService.getScriptCache();
-  var cacheKey = 'q_cluster_' + manager.replace(/\s/g, '_') + '_' + month;
-  var cached = cache.get(cacheKey);
-  if (cached) return JSON.parse(cached);
+  var cacheKey = 'q_cluster_' + manager.replace(/\s/g, '_') + '_' + month + '_' + CACHE_VERSION;
 
-  var allRows = getRawQualityData();
+  if (!forceRefresh) {
+    var cached = cache.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+  }
+
+  var allRows = getRawQualityData(forceRefresh);
   var filtered = [];
   for (var i = 0; i < allRows.length; i++) {
     var r = allRows[i];
@@ -532,7 +554,7 @@ function clientGetClusterQuality(manager, month) {
     hasData: filtered.length > 0
   };
 
-  try { cache.put(cacheKey, JSON.stringify(result), 1800); } catch(e) {}
+  try { cache.put(cacheKey, JSON.stringify(result), 21600); } catch(e) {} // 6 hours
   return result;
 }
 
@@ -596,7 +618,7 @@ function clientGetInitialData(forceRefresh) {
  */
 function clientGetHierarchy(forceRefresh) {
   var cache = CacheService.getScriptCache();
-  var cacheKey = 'quality_hierarchy_v3';
+  var cacheKey = 'quality_hierarchy_' + CACHE_VERSION;
 
   if (!forceRefresh) {
     var cached = cache.get(cacheKey);
