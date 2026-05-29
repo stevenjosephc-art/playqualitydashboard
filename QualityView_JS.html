@@ -4,6 +4,7 @@ const State = {
   initialData: null,
   currentTab: 'agent',
   trendView: 'weekly',
+  auditFilter: 'all',
   selectedMonth: '',
   selectedLdap: '',
   selectedSup: '',
@@ -332,51 +333,32 @@ function renderAgentView() {
 
     <!-- Case Breakdown -->
     <div class="card grid-span-4">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
-            <div class="card-title" style="margin:0;">Audit Breakdown</div>
-            <div style="display:flex; gap: 15px; align-items:center;">
-                <label class="toggle-switch">
-                    <input type="checkbox" id="failures-only-toggle" onchange="filterCaseTable()">
-                    <span class="toggle-slider"></span>
-                    <span class="toggle-label">Show Failures Only</span>
-                </label>
-                <div class="search-input-wrapper" style="width: 250px;">
+        <div class="audit-breakdown-header">
+            <div class="audit-breakdown-title">Case Lookup & Audit Details</div>
+            <div class="audit-filters">
+                <div class="search-cases-wrapper">
                     <i class="ph ph-magnifying-glass"></i>
-                    <input type="text" id="case-search-input" placeholder="Search Case ID..." oninput="filterCaseTable()">
+                    <input type="text" id="audit-search-input" placeholder="Search cases or comments..." oninput="filterCaseList()">
+                </div>
+                <div class="segmented-control">
+                    <button class="control-btn ${State.auditFilter === 'all' ? 'active' : ''}" id="filter-all" onclick="setAuditFilter('all')">All</button>
+                    <button class="control-btn ${State.auditFilter === 'perfect' ? 'active' : ''}" id="filter-perfect" onclick="setAuditFilter('perfect')">Perfect</button>
+                    <button class="control-btn ${State.auditFilter === 'markdowns' ? 'active' : ''}" id="filter-markdowns" onclick="setAuditFilter('markdowns')">Markdowns</button>
                 </div>
             </div>
         </div>
-        <div class="case-table-container">
-            <table class="case-table">
-                <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Case ID</th>
-                        <th>Customer</th>
-                        <th>Business</th>
-                        <th>Compliance</th>
-                        <th>Reviewer Comments</th>
-                    </tr>
-                </thead>
-                <tbody id="case-table-body">
-                    ${data.caseLog.map(c => {
-                        const cust = Number(c.customer) || 0;
-                        const bus = Number(c.business) || 0;
-                        const comp = Number(c.compliance) || 0;
-                        const isFail = cust < 95 || bus < 90 || comp < 99.5;
-                        return `
-                            <tr data-fail="${isFail}">
-                                <td>${c.reviewDate}</td>
-                                <td><span class="case-id-badge">${c.caseId}</span></td>
-                                <td><span class="score-tag ${cust >= 95 ? 'tag-pass' : 'tag-fail'}">${cust.toFixed(1)}%</span></td>
-                                <td><span class="score-tag ${bus >= 90 ? 'tag-pass' : 'tag-fail'}">${bus.toFixed(1)}%</span></td>
-                                <td><span class="score-tag ${comp >= 99.5 ? 'tag-pass' : 'tag-fail'}">${comp.toFixed(1)}%</span></td>
-                                <td class="comment-cell" title="${c.comments}">${c.comments}</td>
-                            </tr>
-                        `;
-                    }).join('')}
-                </tbody>
-            </table>
+        <div class="case-list">
+            <div class="case-list-header">
+                <div>CASE ID</div>
+                <div>CUST</div>
+                <div>BUS</div>
+                <div>COMP</div>
+                <div>MARKDOWNS</div>
+                <div style="text-align:right;">ACTION</div>
+            </div>
+            <div id="case-list-container">
+                ${data.caseLog.map((c, i) => renderCaseCard(c, i)).join('')}
+            </div>
         </div>
     </div>
   `;
@@ -384,19 +366,156 @@ function renderAgentView() {
   renderCharts(data);
 }
 
-function filterCaseTable() {
-    const query = (document.getElementById('case-search-input')?.value || '').toLowerCase();
-    const failuresOnly = document.getElementById('failures-only-toggle')?.checked || false;
-    const rows = document.querySelectorAll('#case-table-body tr');
+function renderCaseCard(c, index) {
+    const custScore = Number(c.customer) || 0;
+    const busScore = Number(c.business) || 0;
+    const compScore = Number(c.compliance) || 0;
 
-    rows.forEach(row => {
-        const caseId = row.querySelector('.case-id-badge').textContent.toLowerCase();
-        const isFail = row.getAttribute('data-fail') === 'true';
+    const isPerfect = custScore >= 1 && busScore >= 1 && compScore >= 1; // Assuming 1 is max score from sheet or 100%
+    // Actually in aggregateQualityRows it multiplies by 100.
+    // In clientGetMyQuality, r[Q_COLS.CUSTOMER_CRITICAL] is the raw value (usually 0 to 1).
+    // Let's check QualityService.gs again.
 
-        const matchesQuery = caseId.includes(query);
-        const matchesFailFilter = !failuresOnly || isFail;
+    const isPerfectAudit = (custScore >= 0.999 && busScore >= 0.999 && compScore >= 0.999);
 
-        row.style.display = (matchesQuery && matchesFailFilter) ? '' : 'none';
+    let markdownsHtml = '';
+    if (isPerfectAudit) {
+        markdownsHtml = '<span class="perfect-audit-text">Perfect Audit!</span>';
+    } else {
+        const tags = [];
+        const catMap = { 'customer': { label: 'Cust', class: 'cust' }, 'business': { label: 'Bus', class: 'bus' }, 'compliance': { label: 'Comp', class: 'comp' } };
+        for (const cat in c.details) {
+            for (const param in c.details[cat]) {
+                const val = String(c.details[cat][param]).toLowerCase();
+                if (val === 'no' || val === '0') {
+                    const info = catMap[cat] || { label: cat, class: 'gray' };
+                    tags.push(`<span class="markdown-tag tag-${info.class}">${info.label}: ${param.replace(/_/g, ' ')}</span>`);
+                }
+            }
+        }
+        markdownsHtml = `<div class="markdown-tags">${tags.join('')}</div>`;
+    }
+
+    const escapedComments = (c.comments || '').replace(/"/g, '&quot;').toLowerCase();
+
+    return `
+        <div class="case-card" data-perfect="${isPerfectAudit}" data-markdown="${!isPerfectAudit}" data-comments="${escapedComments}">
+            <div class="case-summary">
+                <div class="case-id-group">
+                    <a href="javascript:void(0)" class="case-id-link" onclick="copyToClipboard('${c.caseId}')">
+                        ${c.caseId} <i class="ph ph-copy"></i>
+                    </a>
+                    <span class="case-date">${c.reviewDate}</span>
+                </div>
+                <div class="case-status-icon ${custScore >= 0.95 ? 'pass' : 'fail'}">
+                    <i class="ph-fill ${custScore >= 0.95 ? 'ph-check-circle' : 'ph-x-circle'}"></i>
+                </div>
+                <div class="case-status-icon ${busScore >= 0.90 ? 'pass' : 'fail'}">
+                    <i class="ph-fill ${busScore >= 0.90 ? 'ph-check-circle' : 'ph-x-circle'}"></i>
+                </div>
+                <div class="case-status-icon ${compScore >= 0.995 ? 'pass' : 'fail'}">
+                    <i class="ph-fill ${compScore >= 0.995 ? 'ph-check-circle' : 'ph-x-circle'}"></i>
+                </div>
+                <div>${markdownsHtml}</div>
+                <div style="text-align:right;">
+                    <button class="details-btn" onclick="toggleCaseDetails(${index})">Details</button>
+                </div>
+            </div>
+            <div class="case-details-expanded" id="details-${index}">
+                <div class="reviewer-comments-box">
+                    <div class="reviewer-comments-title">Reviewer Comments:</div>
+                    <div class="reviewer-comments-text">"${c.comments || 'No comments'}"</div>
+                </div>
+                <div class="params-details-grid">
+                    ${renderParamDetailsCol('CUSTOMER', c.details.customer, 'cust')}
+                    ${renderParamDetailsCol('BUSINESS', c.details.business, 'bus')}
+                    ${renderParamDetailsCol('COMPLIANCE', c.details.compliance, 'comp')}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function renderParamDetailsCol(title, params, classSuffix) {
+    let rows = '';
+    for (const p in params) {
+        const val = String(params[p]).toLowerCase();
+        if (!val || val === 'undefined') continue;
+
+        const isPass = val === 'yes' || val === '1';
+        const isFail = val === 'no' || val === '0';
+        const displayVal = isPass ? 'PASS' : (isFail ? 'FAIL' : 'N/A');
+        const colorClass = isPass ? 'pass' : (isFail ? 'fail' : 'neutral');
+
+        rows += `
+            <div class="param-row">
+                <span class="param-label">${p.replace(/_/g, ' ').toLowerCase()}</span>
+                <span class="param-val ${colorClass}">${displayVal}</span>
+            </div>
+        `;
+    }
+    return `
+        <div>
+            <div class="param-col-title col-${classSuffix}">${title}</div>
+            <div class="param-rows-container">
+                ${rows}
+            </div>
+        </div>
+    `;
+}
+
+function setAuditFilter(filter) {
+    State.auditFilter = filter;
+    document.querySelectorAll('.audit-filters .control-btn').forEach(btn => btn.classList.remove('active'));
+    document.getElementById(`filter-${filter}`).classList.add('active');
+    filterCaseList();
+}
+
+function filterCaseList() {
+    const query = (document.getElementById('audit-search-input')?.value || '').toLowerCase();
+    const filter = State.auditFilter;
+    const cards = document.querySelectorAll('.case-card');
+
+    cards.forEach(card => {
+        const caseId = card.querySelector('.case-id-link').textContent.toLowerCase();
+        const comments = card.getAttribute('data-comments');
+        const isPerfect = card.getAttribute('data-perfect') === 'true';
+        const isMarkdown = card.getAttribute('data-markdown') === 'true';
+
+        const matchesQuery = caseId.includes(query) || comments.includes(query);
+        let matchesFilter = true;
+        if (filter === 'perfect') matchesFilter = isPerfect;
+        else if (filter === 'markdowns') matchesFilter = isMarkdown;
+
+        card.style.display = (matchesQuery && matchesFilter) ? 'block' : 'none';
+    });
+}
+
+function toggleCaseDetails(index) {
+    const el = document.getElementById(`details-${index}`);
+    if (el) {
+        const isActive = el.classList.contains('active');
+        // Close all others maybe? No, let's allow multiple open.
+        el.classList.toggle('active');
+    }
+}
+
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        const feedback = document.createElement('div');
+        feedback.style.position = 'fixed';
+        feedback.style.bottom = '20px';
+        feedback.style.left = '50%';
+        feedback.style.transform = 'translateX(-50%)';
+        feedback.style.background = 'rgba(0,0,0,0.8)';
+        feedback.style.color = 'white';
+        feedback.style.padding = '8px 16px';
+        feedback.style.borderRadius = '20px';
+        feedback.style.fontSize = '12px';
+        feedback.style.zIndex = '10000';
+        feedback.textContent = 'Case ID copied to clipboard';
+        document.body.appendChild(feedback);
+        setTimeout(() => feedback.remove(), 2000);
     });
 }
 
