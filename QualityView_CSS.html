@@ -366,6 +366,88 @@ input:checked + .toggle-slider:before {
   color: var(--text-secondary);
 }
 
+/* Segmented Control */
+.segmented-control {
+  background: var(--apple-light-gray);
+  padding: 3px;
+  border-radius: 9px;
+  display: flex;
+  gap: 2px;
+}
+
+.control-btn {
+  border: none;
+  background: transparent;
+  padding: 6px 16px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.control-btn.active {
+  background: white;
+  color: var(--text-primary);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Parameter Group Styling */
+.param-group-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--apple-blue);
+  margin-bottom: 20px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+}
+
+.param-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.param-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.param-info {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.param-name {
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 80%;
+}
+
+.param-score {
+  color: var(--text-secondary);
+  font-weight: 700;
+}
+
+.param-progress-bg {
+  height: 6px;
+  background: rgba(0,0,0,0.05);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.param-progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 /* Dashboard Cards */
 .dashboard-grid {
   display: grid;

@@ -180,9 +180,6 @@ function getRawQualityData(forceRefresh) {
   }
   var maxCol = Math.max.apply(null, indices) + 1;
 
-function getRawQualityData(forceRefresh) {
-  if (_MEMOIZED_RAW_DATA && !forceRefresh) return _MEMOIZED_RAW_DATA;
-
   getColMapping();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) throw new Error("Active spreadsheet not found.");

@@ -3,6 +3,7 @@
 const State = {
   initialData: null,
   currentTab: 'agent',
+  trendView: 'weekly',
   selectedMonth: '',
   selectedLdap: '',
   selectedSup: '',
@@ -305,7 +306,13 @@ function renderAgentView() {
 
     <!-- Graphs -->
     <div class="card grid-span-3">
-        <div class="card-title">Weekly Performance Trends</div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
+            <div class="card-title" style="margin:0;">Performance Trends</div>
+            <div class="segmented-control">
+                <button class="control-btn ${State.trendView === 'daily' ? 'active' : ''}" onclick="toggleTrendView('daily')">Daily</button>
+                <button class="control-btn ${State.trendView === 'weekly' ? 'active' : ''}" onclick="toggleTrendView('weekly')">Weekly</button>
+            </div>
+        </div>
         <div id="chart-trends" style="height: 350px;"></div>
     </div>
     <div class="card">
@@ -411,24 +418,32 @@ function renderPremiumScoreCard(title, score, target) {
 
 function renderParamGroup(title, params) {
     return `
-        <div>
-            <div style="font-size: 14px; font-weight: 700; color: var(--apple-blue); margin-bottom: 16px;">${title}</div>
-            ${params.map(p => {
-                if (p.score === null) return '';
-                return `
-                    <div style="margin-bottom: 16px;">
-                        <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:6px; font-weight:500;">
-                            <span>${p.name.replace(/_/g, ' ')}</span>
-                            <span>${(p.score || 0).toFixed(0)}%</span>
+        <div class="param-group">
+            <div class="param-group-title">${title}</div>
+            <div class="param-list">
+                ${params.map(p => {
+                    if (p.score === null) return '';
+                    const score = Number(p.score) || 0;
+                    return `
+                        <div class="param-item">
+                            <div class="param-info">
+                                <span class="param-name">${p.name.replace(/_/g, ' ')}</span>
+                                <span class="param-score">${score.toFixed(0)}%</span>
+                            </div>
+                            <div class="param-progress-bg">
+                                <div class="param-progress-fill" style="width: ${score}%; background: ${score >= 95 ? 'var(--apple-green)' : (score >= 90 ? 'var(--apple-blue)' : 'var(--apple-orange)')}"></div>
+                            </div>
                         </div>
-                        <div style="height:6px; background:rgba(0,0,0,0.05); border-radius:3px; overflow:hidden;">
-                            <div style="height:100%; width:${p.score}%; background:${p.score >= 90 ? 'var(--apple-green)' : 'var(--apple-orange)'}; border-radius:3px;"></div>
-                        </div>
-                    </div>
-                `;
-            }).join('')}
+                    `;
+                }).join('')}
+            </div>
         </div>
     `;
+}
+
+function toggleTrendView(view) {
+    State.trendView = view;
+    renderAgentView();
 }
 
 function renderCharts(data) {
@@ -456,17 +471,19 @@ function renderCharts(data) {
 
     // Trends
     const trendsEl = document.querySelector("#chart-trends");
-    if (trendsEl && data.trends && data.trends.weekly) {
+    const trendData = (State.trendView === 'daily') ? data.trends.daily : data.trends.weekly;
+
+    if (trendsEl && trendData && trendData.length > 0) {
         new ApexCharts(trendsEl, {
             ...chartOptions,
             series: [
-                { name: 'Customer', data: data.trends.weekly.map(d => Number(d.customer || 0).toFixed(1)) },
-                { name: 'Business', data: data.trends.weekly.map(d => Number(d.business || 0).toFixed(1)) },
-                { name: 'Compliance', data: data.trends.weekly.map(d => Number(d.compliance || 0).toFixed(1)) }
+                { name: 'Customer', data: trendData.map(d => Number(d.customer || 0).toFixed(1)) },
+                { name: 'Business', data: trendData.map(d => Number(d.business || 0).toFixed(1)) },
+                { name: 'Compliance', data: trendData.map(d => Number(d.compliance || 0).toFixed(1)) }
             ],
             chart: { ...chartOptions.chart, type: 'area' },
             colors: ['#007AFF', '#34C759', '#FF3B30'],
-            xaxis: { ...chartOptions.xaxis, categories: data.trends.weekly.map(d => d.label) },
+            xaxis: { ...chartOptions.xaxis, categories: trendData.map(d => d.label) },
             fill: {
                 type: 'gradient',
                 gradient: {
@@ -482,14 +499,48 @@ function renderCharts(data) {
     // Radar
     const radarEl = document.querySelector("#chart-radar");
     if (radarEl) {
+        const targets = s.targets || { CUSTOMER: 95, BUSINESS: 90, COMPLIANCE: 99.5 };
         new ApexCharts(radarEl, {
             ...chartOptions,
-            series: [{ name: 'Current Score', data: [Number(s.customer || 0).toFixed(1), Number(s.business || 0).toFixed(1), Number(s.compliance || 0).toFixed(1)] }],
-            chart: { ...chartOptions.chart, type: 'radar', height: 350 },
-            xaxis: { categories: ['Customer', 'Business', 'Compliance'] },
-            colors: ['#007AFF'],
-            fill: { opacity: 0.2 },
-            markers: { size: 4, colors: ['#007AFF'], strokeWidth: 2, hover: { size: 7 } }
+            series: [
+                {
+                    name: 'Current',
+                    data: [
+                        Number(s.customer || 0).toFixed(1),
+                        Number(s.business || 0).toFixed(1),
+                        Number(s.compliance || 0).toFixed(1)
+                    ]
+                },
+                {
+                    name: 'Target',
+                    data: [targets.CUSTOMER, targets.BUSINESS, targets.COMPLIANCE]
+                }
+            ],
+            chart: {
+                ...chartOptions.chart,
+                type: 'radar',
+                height: 350,
+                dropShadow: { enabled: true, blur: 8, left: 1, top: 1, opacity: 0.1 }
+            },
+            plotOptions: {
+                radar: {
+                    polygons: {
+                        strokeColors: 'rgba(0,0,0,0.05)',
+                        connectorColors: 'rgba(0,0,0,0.05)',
+                        fill: { colors: ['#fcfcfc', '#fff'] }
+                    }
+                }
+            },
+            xaxis: {
+                categories: ['Customer', 'Business', 'Compliance'],
+                labels: { style: { colors: '#86868B', fontWeight: 600 } }
+            },
+            yaxis: { show: false, min: 0, max: 100 },
+            colors: ['#007AFF', '#34C759'],
+            fill: { opacity: [0.35, 0.1] },
+            stroke: { show: true, width: 2 },
+            markers: { size: 0, hover: { size: 6 } },
+            legend: { position: 'bottom', horizontalAlign: 'center', offsetY: 10 }
         }).render();
     }
 }
