@@ -85,23 +85,11 @@
         <section class="selectors-section" id="selectors-container">
           <!-- Agent Selectors -->
           <div id="selector-agent" class="selector-row">
-            <div class="input-group">
-              <label>LOB</label>
-              <select id="lob-select" onchange="onLobChange(this.value)">
-                <option value="">Select LOB...</option>
-              </select>
-            </div>
-            <div class="input-group">
-              <label>Supervisor</label>
-              <select id="agent-sup-select" onchange="onAgentSupChange(this.value)" disabled>
-                <option value="">Select Supervisor...</option>
-              </select>
-            </div>
-            <div class="input-group search-group">
+            <div class="input-group search-group grid-span-4">
               <label>Agent LDAP</label>
               <div class="search-input-wrapper">
                 <i class="ph ph-magnifying-glass"></i>
-                <input type="text" id="ldap-search-input" placeholder="Search Agent..." autocomplete="off">
+                <input type="text" id="ldap-search-input" placeholder="Enter LDAP (e.g. anggam) and press enter or select from list..." autocomplete="off">
                 <div id="ldap-autocomplete-list" class="autocomplete-dropdown"></div>
               </div>
             </div>

@@ -28,8 +28,24 @@ async function initApp(forceRefresh = false) {
   }
 
   try {
-    const data = await callServer('clientGetInitialData', [forceRefresh]);
-    console.log('QualityOS: Initial Data Received', data);
+    let data = null;
+    if (!forceRefresh) {
+        try {
+            const cached = sessionStorage.getItem('q_initial_data');
+            if (cached) {
+                data = JSON.parse(cached);
+                console.log('QualityOS: Loaded Initial Data from Session Cache');
+            }
+        } catch (e) { console.warn('sessionStorage access denied', e); }
+    }
+
+    if (!data) {
+        data = await callServer('clientGetInitialData', [forceRefresh]);
+        console.log('QualityOS: Initial Data Received from Server', data);
+        if (data) {
+            try { sessionStorage.setItem('q_initial_data', JSON.stringify(data)); } catch (e) {}
+        }
+    }
 
     if (!data) throw new Error("Server returned empty data. Check sheet connectivity.");
     State.initialData = data;
@@ -126,20 +142,6 @@ function onMonthChange(val) {
 
 function onLobChange(val) {
   State.selectedLob = val;
-  const supSelect = document.getElementById('agent-sup-select');
-  const ldapSelect = document.getElementById('agent-ldap-select');
-
-  if (val && State.initialData.hierarchy[val]) {
-    const sups = Object.keys(State.initialData.hierarchy[val]);
-    if (supSelect) {
-        supSelect.innerHTML = '<option value="">Select Supervisor...</option>' +
-          sups.map(s => `<option value="${s}">${s}</option>`).join('');
-        supSelect.disabled = false;
-    }
-  } else if (supSelect) {
-    supSelect.innerHTML = '<option value="">Select Supervisor...</option>';
-    supSelect.disabled = true;
-  }
 }
 
 function onAgentSupChange(val) {
@@ -297,9 +299,9 @@ function renderAgentView() {
       <div class="trend-badge trend-up"><i class="ph ph-trend-up"></i> ${State.selectedMonth}</div>
     </div>
 
-    ${renderPremiumScoreCard('Customer Critical', s.customer, s.targets.CUSTOMER)}
-    ${renderPremiumScoreCard('Business Critical', s.business, s.targets.BUSINESS)}
-    ${renderPremiumScoreCard('Compliance Critical', s.compliance, s.targets.COMPLIANCE)}
+    ${renderPremiumScoreCard('Customer Critical', s.customer || 0, s.targets.CUSTOMER)}
+    ${renderPremiumScoreCard('Business Critical', s.business || 0, s.targets.BUSINESS)}
+    ${renderPremiumScoreCard('Compliance Critical', s.compliance || 0, s.targets.COMPLIANCE)}
 
     <!-- Graphs -->
     <div class="card grid-span-3">
@@ -372,14 +374,16 @@ function filterCaseTable(val) {
 }
 
 function renderPremiumScoreCard(title, score, target) {
-    const isPass = score >= target;
+    const s = Number(score) || 0;
+    const t = Number(target) || 0;
+    const isPass = s >= t;
     return `
         <div class="card">
             <div class="card-title">${title}</div>
-            <div class="score-value" style="color: ${isPass ? 'var(--apple-green)' : 'var(--apple-red)'}">${score.toFixed(1)}%</div>
+            <div class="score-value" style="color: ${isPass ? 'var(--apple-green)' : 'var(--apple-red)'}">${s.toFixed(1)}%</div>
             <div class="trend-badge ${isPass ? 'trend-up' : 'trend-down'}">
                 <i class="ph ${isPass ? 'ph-check-circle' : 'ph-warning'}"></i>
-                Target: ${target}%
+                Target: ${t}%
             </div>
         </div>
     `;
@@ -395,7 +399,7 @@ function renderParamGroup(title, params) {
                     <div style="margin-bottom: 16px;">
                         <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:6px; font-weight:500;">
                             <span>${p.name.replace(/_/g, ' ')}</span>
-                            <span>${p.score.toFixed(0)}%</span>
+                            <span>${(p.score || 0).toFixed(0)}%</span>
                         </div>
                         <div style="height:6px; background:rgba(0,0,0,0.05); border-radius:3px; overflow:hidden;">
                             <div style="height:100%; width:${p.score}%; background:${p.score >= 90 ? 'var(--apple-green)' : 'var(--apple-orange)'}; border-radius:3px;"></div>
@@ -434,9 +438,9 @@ function renderCharts(data) {
     new ApexCharts(document.querySelector("#chart-trends"), {
         ...chartOptions,
         series: [
-            { name: 'Customer', data: data.trends.weekly.map(d => d.customer.toFixed(1)) },
-            { name: 'Business', data: data.trends.weekly.map(d => d.business.toFixed(1)) },
-            { name: 'Compliance', data: data.trends.weekly.map(d => d.compliance.toFixed(1)) }
+            { name: 'Customer', data: data.trends.weekly.map(d => (d.customer || 0).toFixed(1)) },
+            { name: 'Business', data: data.trends.weekly.map(d => (d.business || 0).toFixed(1)) },
+            { name: 'Compliance', data: data.trends.weekly.map(d => (d.compliance || 0).toFixed(1)) }
         ],
         chart: { ...chartOptions.chart, type: 'area' },
         colors: ['#007AFF', '#34C759', '#FF3B30'],
@@ -455,7 +459,7 @@ function renderCharts(data) {
     // Radar
     new ApexCharts(document.querySelector("#chart-radar"), {
         ...chartOptions,
-        series: [{ name: 'Current Score', data: [s.customer.toFixed(1), s.business.toFixed(1), s.compliance.toFixed(1)] }],
+        series: [{ name: 'Current Score', data: [(s.customer || 0).toFixed(1), (s.business || 0).toFixed(1), (s.compliance || 0).toFixed(1)] }],
         chart: { ...chartOptions.chart, type: 'radar', height: 350 },
         xaxis: { categories: ['Customer', 'Business', 'Compliance'] },
         colors: ['#007AFF'],
@@ -481,11 +485,12 @@ function renderTeamView() {
     }
 
     const s = data.stats;
+    const avg = ((s.customer || 0) + (s.business || 0) + (s.compliance || 0)) / 3;
     container.innerHTML = `
-        <div class="card">${renderMiniStat('Team Avg', ((s.customer + s.business + s.compliance)/3).toFixed(1) + '%')}</div>
-        ${renderPremiumScoreCard('Customer', s.customer, s.targets.CUSTOMER)}
-        ${renderPremiumScoreCard('Business', s.business, s.targets.BUSINESS)}
-        ${renderPremiumScoreCard('Compliance', s.compliance, s.targets.COMPLIANCE)}
+        <div class="card">${renderMiniStat('Team Avg', avg.toFixed(1) + '%')}</div>
+        ${renderPremiumScoreCard('Customer', s.customer || 0, s.targets.CUSTOMER)}
+        ${renderPremiumScoreCard('Business', s.business || 0, s.targets.BUSINESS)}
+        ${renderPremiumScoreCard('Compliance', s.compliance || 0, s.targets.COMPLIANCE)}
 
         <div class="card grid-span-3">
             <div class="card-title">Agent Rankings</div>
@@ -494,8 +499,8 @@ function renderTeamView() {
                     <div class="ranking-item">
                         <div class="rank-num">${i+1}</div>
                         <div class="rank-ldap">${a.ldap}</div>
-                        <div class="rank-bar-bg"><div class="rank-bar-fill" style="width: ${((a.stats.customer + a.stats.business + a.stats.compliance)/3)}%"></div></div>
-                        <div class="rank-score">${((a.stats.customer + a.stats.business + a.stats.compliance)/3).toFixed(1)}%</div>
+                        <div class="rank-bar-bg"><div class="rank-bar-fill" style="width: ${(((a.stats.customer || 0) + (a.stats.business || 0) + (a.stats.compliance || 0))/3)}%"></div></div>
+                        <div class="rank-score">${(((a.stats.customer || 0) + (a.stats.business || 0) + (a.stats.compliance || 0))/3).toFixed(1)}%</div>
                     </div>
                 `).join('')}
             </div>
@@ -522,10 +527,10 @@ function renderClusterView() {
     const s = data.stats;
     container.innerHTML = `
         <div class="card grid-span-4" style="display:grid; grid-template-columns: repeat(4, 1fr); gap: 20px;">
-            ${renderMiniStat('Total Audits', s.count)}
-            ${renderMiniStat('Cust. Avg', s.customer.toFixed(1) + '%')}
-            ${renderMiniStat('Bus. Avg', s.business.toFixed(1) + '%')}
-            ${renderMiniStat('Comp. Avg', s.compliance.toFixed(1) + '%')}
+            ${renderMiniStat('Total Audits', s.count || 0)}
+            ${renderMiniStat('Cust. Avg', (s.customer || 0).toFixed(1) + '%')}
+            ${renderMiniStat('Bus. Avg', (s.business || 0).toFixed(1) + '%')}
+            ${renderMiniStat('Comp. Avg', (s.compliance || 0).toFixed(1) + '%')}
         </div>
 
         <div class="card grid-span-4">
@@ -535,8 +540,8 @@ function renderClusterView() {
                     <div class="ranking-item">
                         <div class="rank-num">${i+1}</div>
                         <div class="rank-ldap" style="width: 200px;">${sup.name}</div>
-                        <div class="rank-bar-bg"><div class="rank-bar-fill" style="width: ${((sup.stats.customer + sup.stats.business + sup.stats.compliance)/3)}%; background: var(--apple-blue);"></div></div>
-                        <div class="rank-score">${((sup.stats.customer + sup.stats.business + sup.stats.compliance)/3).toFixed(1)}%</div>
+                        <div class="rank-bar-bg"><div class="rank-bar-fill" style="width: ${(((sup.stats.customer || 0) + (sup.stats.business || 0) + (sup.stats.compliance || 0))/3)}%; background: var(--apple-blue);"></div></div>
+                        <div class="rank-score">${(((sup.stats.customer || 0) + (sup.stats.business || 0) + (sup.stats.compliance || 0))/3).toFixed(1)}%</div>
                     </div>
                 `).join('')}
             </div>

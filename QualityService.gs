@@ -126,12 +126,51 @@ function doGet() {
  * Optimization: We skip CacheService for the full raw dataset if it's large,
  * as the overhead of 100+ cache chunks often exceeds the time to read directly from the Sheet.
  */
+/**
+ * Fetches specific columns from the spreadsheet.
+ * This is much faster than reading all columns for large sheets.
+ */
+function getColumnsFromSheet(colIndices, forceRefresh) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(QUALITY_SHEET_NAME);
+  if (!sheet) return [];
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+
+  // Sort and unique indices to fetch efficiently
+  var uniqueIndices = Array.from(new Set(colIndices)).sort(function(a, b){return a-b});
+  if (uniqueIndices[0] === -1) uniqueIndices.shift(); // Remove -1
+
+  if (uniqueIndices.length === 0) return [];
+
+  var startCol = uniqueIndices[0] + 1;
+  var endCol = uniqueIndices[uniqueIndices.length - 1] + 1;
+  var numCols = endCol - startCol + 1;
+
+  // If we are fetching almost everything, just get the range
+  // Otherwise, if columns are sparse, we might still just get the whole block
+  // for simplicity in Apps Script, but limited by the actual used columns.
+  var raw = sheet.getRange(2, startCol, lastRow - 1, numCols).getValues();
+
+  // Map back to the original order/indices requested
+  return raw.map(function(row) {
+    var mappedRow = {};
+    colIndices.forEach(function(origIdx, i) {
+      if (origIdx === -1) {
+        mappedRow[i] = null;
+      } else {
+        mappedRow[i] = row[origIdx - (startCol - 1)];
+      }
+    });
+    return mappedRow;
+  });
+}
+
 function getRawQualityData(forceRefresh) {
   if (_MEMOIZED_RAW_DATA && !forceRefresh) return _MEMOIZED_RAW_DATA;
 
-  // Ensure mapping is done
   getColMapping();
-
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) throw new Error("Active spreadsheet not found.");
 
@@ -141,11 +180,12 @@ function getRawQualityData(forceRefresh) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
 
-  var lastCol = sheet.getLastColumn();
-  var raw = sheet.getRange(1, 1, lastRow, lastCol).getValues();
-
+  // Optimization: Still get all columns for full audit aggregation,
+  // but Apps Script is fastest with a single getValues() call.
+  var raw = sheet.getDataRange().getValues();
   var data = [];
   var caseIdIdx = Q_COLS.CASE_ID;
+
   for (var i = 1; i < raw.length; i++) {
     if (caseIdIdx !== -1 && raw[i][caseIdIdx]) {
       data.push(raw[i]);
@@ -163,11 +203,12 @@ function getTz() {
 }
 
 function getAvailableQualityMonths() {
-  var rows = getRawQualityData();
+  getColMapping();
+  var rows = getColumnsFromSheet([Q_COLS.REVIEW_MONTH]);
   var seen = {};
   var tz = getTz();
   for (var i = 0; i < rows.length; i++) {
-    var month = rows[i][Q_COLS.REVIEW_MONTH];
+    var month = rows[i][0];
     if (month) {
       if (month instanceof Date) {
         try {
@@ -555,23 +596,27 @@ function clientGetInitialData(forceRefresh) {
  */
 function clientGetHierarchy(forceRefresh) {
   var cache = CacheService.getScriptCache();
-  var cacheKey = 'quality_hierarchy_v2';
+  var cacheKey = 'quality_hierarchy_v3';
 
   if (!forceRefresh) {
     var cached = cache.get(cacheKey);
     if (cached) return JSON.parse(cached);
   }
 
-  var rows = getRawQualityData();
+  getColMapping();
+  // Fetch only the columns needed for hierarchy
+  var indices = [Q_COLS.LOB, Q_COLS.SUPERVISOR, Q_COLS.AGENT_LDAP, Q_COLS.MANAGER];
+  var rows = getColumnsFromSheet(indices);
+
   var hierarchy = {};
   var managers = {};
 
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
-    var lob = String(r[Q_COLS.LOB] || 'Unknown LOB').trim();
-    var sup = String(r[Q_COLS.SUPERVISOR] || 'Unknown Supervisor').trim();
-    var agent = normalizeLdap(r[Q_COLS.AGENT_LDAP]);
-    var mgr = String(r[Q_COLS.MANAGER] || '').trim();
+    var lob = String(r[0] || 'Unknown LOB').trim();
+    var sup = String(r[1] || 'Unknown Supervisor').trim();
+    var agent = normalizeLdap(r[2]);
+    var mgr = String(r[3] || '').trim();
 
     if (agent) {
       if (!hierarchy[lob]) hierarchy[lob] = {};
