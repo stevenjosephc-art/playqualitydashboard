@@ -285,7 +285,9 @@ function renderProfileInfo(data) {
 
         info.innerHTML = `
             <div class="profile-card-main">
-                <img src="${imgUrl}" class="agent-profile-img" onerror="this.onerror=null;this.src='${fallbackUrl}';">
+                <div class="profile-img-container">
+                    <img src="${imgUrl}" class="agent-profile-img" onerror="this.onerror=null;this.src='${fallbackUrl}';">
+                </div>
                 <div class="profile-meta-grid">
                     <div class="profile-meta-item">
                         <span class="profile-meta-label">Supervisor</span>
