@@ -1,0 +1,837 @@
+<script>
+// State Management
+const State = {
+  initialData: null,
+  currentTab: 'agent',
+  trendView: 'weekly',
+  auditFilter: 'all',
+  selectedMonth: '',
+  selectedLdap: '',
+  selectedSup: '',
+  selectedMgr: '',
+  selectedLob: '',
+  filteredData: null,
+  loading: false
+};
+
+// Initialization
+document.addEventListener('DOMContentLoaded', () => {
+  initApp();
+});
+
+async function initApp(forceRefresh = false) {
+  showLoader(true);
+  console.log('QualityOS: Booting...');
+
+  const root = document.getElementById('quality-root');
+  if (root) {
+      root.style.display = 'flex';
+      root.style.opacity = '0.3';
+  }
+
+  try {
+    let data = null;
+    if (!forceRefresh) {
+        try {
+            const cached = sessionStorage.getItem('q_initial_data');
+            if (cached) {
+                data = JSON.parse(cached);
+                console.log('QualityOS: Loaded Initial Data from Session Cache');
+            }
+        } catch (e) { console.warn('sessionStorage access denied', e); }
+    }
+
+    if (!data) {
+        data = await callServer('clientGetInitialData', [forceRefresh]);
+        console.log('QualityOS: Initial Data Received from Server', data);
+        if (data) {
+            try { sessionStorage.setItem('q_initial_data', JSON.stringify(data)); } catch (e) {}
+        }
+    }
+
+    if (!data) throw new Error("Server returned empty data. Check sheet connectivity.");
+    State.initialData = data;
+
+    // UI Setup
+    if (data.session) updateUserInfo(data.session);
+
+    if (!State.selectedMonth && data.months && data.months.length > 0) {
+      State.selectedMonth = data.months[0];
+    }
+    if (data.session) State.selectedLdap = data.session.ldap;
+
+    if (data.months) populateMonthPicker();
+    if (data.hierarchy) populateLobPicker();
+    if (data.managers) populateMgrPicker();
+    setupLDAPAutocomplete();
+
+    // Reveal Dashboard
+    if (root) {
+        root.style.opacity = '1';
+        root.classList.add('fade-in');
+        console.log('QualityOS: Root displayed.');
+    }
+
+    await fetchData();
+
+  } catch (e) {
+    console.error('QualityOS Error:', e);
+    if (root) {
+        root.style.opacity = '1';
+    }
+    const content = document.getElementById('view-content');
+    if (content) {
+        content.innerHTML = `
+            <div class="card grid-span-4" style="text-align:center; padding: 60px;">
+                <i class="ph ph-warning-octagon" style="font-size: 48px; color: var(--apple-red);"></i>
+                <h3>Initialization Failed</h3>
+                <p style="color: var(--text-secondary); margin: 10px 0 20px;">${e.message}</p>
+                <button class="icon-button" onclick="initApp(true)" style="margin: 0 auto; width: auto; padding: 0 20px;">
+                    <i class="ph ph-arrows-clockwise"></i> Try Again
+                </button>
+            </div>
+        `;
+    } else {
+        alert('Dashboard Overhaul Error: ' + e.message);
+    }
+  } finally {
+    showLoader(false);
+  }
+}
+
+function updateUserInfo(session) {
+    if (!session) return;
+    const nameEl = document.getElementById('user-ldap');
+    const initEl = document.getElementById('user-initials');
+    if (nameEl) nameEl.textContent = session.ldap || 'User';
+    if (initEl && session.ldap) initEl.textContent = session.ldap.substring(0, 2).toUpperCase();
+}
+
+// UI Handlers
+function populateMonthPicker() {
+  const picker = document.getElementById('quality-month-picker');
+  if (!picker || !State.initialData || !State.initialData.months) return;
+  picker.innerHTML = State.initialData.months.map(m =>
+    `<option value="${m}" ${m === State.selectedMonth ? 'selected' : ''}>${m}</option>`
+  ).join('');
+}
+
+function populateLobPicker() {
+  const lobSelect = document.getElementById('lob-select');
+  const teamLobSelect = document.getElementById('team-lob-select');
+  if (!State.initialData || !State.initialData.hierarchy) return;
+
+  const lobs = Object.keys(State.initialData.hierarchy);
+  const options = '<option value="">Select LOB...</option>' +
+    lobs.map(l => `<option value="${l}">${l}</option>`).join('');
+
+  if (lobSelect) lobSelect.innerHTML = options;
+  if (teamLobSelect) teamLobSelect.innerHTML = options;
+}
+
+function populateMgrPicker() {
+  const mgrSelect = document.getElementById('mgr-select');
+  if (!mgrSelect || !State.initialData || !State.initialData.managers) return;
+
+  mgrSelect.innerHTML = '<option value="">Select Manager...</option>' +
+    State.initialData.managers.map(m => `<option value="${m}">${m}</option>`).join('');
+}
+
+function onMonthChange(val) {
+  State.selectedMonth = val;
+  fetchData();
+}
+
+function onLobChange(val) {
+  State.selectedLob = val;
+}
+
+function onAgentSupChange(val) {
+  State.selectedSup = val;
+}
+
+function onTeamLobChange(val) {
+  State.selectedLob = val;
+  const supSelect = document.getElementById('team-sup-select');
+  if (val && State.initialData.hierarchy[val]) {
+    const sups = Object.keys(State.initialData.hierarchy[val]);
+    if (supSelect) {
+        supSelect.innerHTML = '<option value="">Select Supervisor...</option>' +
+          sups.map(s => `<option value="${s}">${s}</option>`).join('');
+        supSelect.disabled = false;
+    }
+  } else if (supSelect) {
+    supSelect.innerHTML = '<option value="">Select Supervisor...</option>';
+    supSelect.disabled = true;
+  }
+}
+
+function onTeamSupChange(val) {
+  State.selectedSup = val;
+  fetchData();
+}
+
+function onMgrChange(val) {
+  State.selectedMgr = val;
+  fetchData();
+}
+
+function setupLDAPAutocomplete() {
+  const input = document.getElementById('ldap-search-input');
+  const list = document.getElementById('ldap-autocomplete-list');
+
+  if (!input || !list) return;
+
+  const allAgents = getAllAgentsFromHierarchy();
+
+  input.addEventListener('input', (e) => {
+    const val = e.target.value.toLowerCase();
+    list.innerHTML = '';
+    if (!val) {
+      list.style.display = 'none';
+      return;
+    }
+
+    const matches = allAgents.filter(a => a.toLowerCase().includes(val)).slice(0, 10);
+    if (matches.length > 0) {
+      matches.forEach(m => {
+        const item = document.createElement('div');
+        item.className = 'autocomplete-item';
+        item.textContent = m;
+        item.onclick = () => {
+          input.value = m;
+          list.style.display = 'none';
+          State.selectedLdap = m;
+          fetchData();
+        };
+        list.appendChild(item);
+      });
+      list.style.display = 'block';
+    } else {
+      list.style.display = 'none';
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (e.target !== input) list.style.display = 'none';
+  });
+}
+
+function getAllAgentsFromHierarchy() {
+  const agents = new Set();
+  if (!State.initialData || !State.initialData.hierarchy) return [];
+  const h = State.initialData.hierarchy;
+  for (const lob in h) {
+    for (const sup in h[lob]) {
+      if (Array.isArray(h[lob][sup])) {
+          h[lob][sup].forEach(a => agents.add(a));
+      }
+    }
+  }
+  return Array.from(agents).sort();
+}
+
+async function fetchData(forceRefresh = false) {
+  if (State.loading) return;
+  State.loading = true;
+
+  const content = document.getElementById('view-content');
+  if (content) {
+    content.innerHTML = '<div class="grid-span-4" style="text-align:center; padding: 100px;"><div class="q-spinner" style="margin: 0 auto;"></div></div>';
+  }
+
+  try {
+    let result;
+    if (State.currentTab === 'agent') {
+      if (!State.selectedLdap) throw new Error("Please select an agent.");
+      result = await callServer('clientGetMyQuality', [State.selectedLdap, State.selectedMonth, forceRefresh]);
+    } else if (State.currentTab === 'team') {
+      if (!State.selectedSup) throw new Error("Please select a supervisor.");
+      result = await callServer('clientGetTeamQuality', [State.selectedSup, State.selectedMonth, forceRefresh]);
+    } else if (State.currentTab === 'cluster') {
+      if (!State.selectedMgr) throw new Error("Please select a manager.");
+      result = await callServer('clientGetClusterQuality', [State.selectedMgr, State.selectedMonth, forceRefresh]);
+    }
+
+    State.filteredData = result;
+    renderView();
+  } catch (e) {
+    console.error('Fetch Error:', e);
+    if (content) {
+        content.innerHTML = `<div class="card grid-span-4" style="text-align:center; color: var(--apple-red);">Oops! ${e.message}</div>`;
+    }
+  } finally {
+    State.loading = false;
+  }
+}
+
+function renderView() {
+  if (State.currentTab === 'agent') {
+    renderAgentView();
+  } else if (State.currentTab === 'team') {
+    renderTeamView();
+  } else if (State.currentTab === 'cluster') {
+    renderClusterView();
+  }
+}
+
+function renderAgentView() {
+  const data = State.filteredData;
+  const container = document.getElementById('view-content');
+  if (!container) return;
+
+  if (!data || !data.hasData) {
+    container.innerHTML = `
+      <div class="card grid-span-4" style="text-align:center; padding: 80px;">
+        <i class="ph ph-mask-sad" style="font-size: 64px; color: var(--apple-gray); margin-bottom: 20px; display:block;"></i>
+        <div style="font-size: 20px; font-weight: 700;">No Data Found</div>
+        <div style="color: var(--text-secondary); margin-top: 8px;">We couldn't find any audits for ${State.selectedLdap} in ${State.selectedMonth}</div>
+      </div>
+    `;
+    return;
+  }
+
+  const s = data.stats;
+
+  container.innerHTML = `
+    <!-- Top Level Cards -->
+    <div class="card">
+      <div class="card-title">Total Audits</div>
+      <div class="score-value">${s.count}</div>
+      <div class="trend-badge trend-up"><i class="ph ph-trend-up"></i> ${State.selectedMonth}</div>
+    </div>
+
+    ${renderPremiumScoreCard('Customer Critical', s.customer || 0, s.targets.CUSTOMER)}
+    ${renderPremiumScoreCard('Business Critical', s.business || 0, s.targets.BUSINESS)}
+    ${renderPremiumScoreCard('Compliance Critical', s.compliance || 0, s.targets.COMPLIANCE)}
+
+    <!-- Graphs -->
+    <div class="card grid-span-3">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
+            <div class="card-title" style="margin:0;">Performance Trends</div>
+            <div class="segmented-control">
+                <button class="control-btn ${State.trendView === 'daily' ? 'active' : ''}" onclick="toggleTrendView('daily')">Daily</button>
+                <button class="control-btn ${State.trendView === 'weekly' ? 'active' : ''}" onclick="toggleTrendView('weekly')">Weekly</button>
+            </div>
+        </div>
+        <div id="chart-trends" style="height: 350px;"></div>
+    </div>
+    <div class="card">
+        <div class="card-title">Distribution</div>
+        <div id="chart-radar" style="height: 350px;"></div>
+    </div>
+
+    <!-- Parameter Breakdown -->
+    <div class="card grid-span-4">
+        <div class="card-title">Detailed Parameter Performance</div>
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px;">
+            ${renderParamGroup('Customer', s.groupedParams.customer)}
+            ${renderParamGroup('Business', s.groupedParams.business)}
+            ${renderParamGroup('Compliance', s.groupedParams.compliance)}
+        </div>
+    </div>
+
+    <!-- Case Breakdown -->
+    <div class="card grid-span-4">
+        <div class="audit-breakdown-header">
+            <div class="audit-breakdown-title">Case Lookup & Audit Details</div>
+            <div class="audit-filters">
+                <div class="search-cases-wrapper">
+                    <i class="ph ph-magnifying-glass"></i>
+                    <input type="text" id="audit-search-input" placeholder="Search cases or comments..." oninput="filterCaseList()">
+                </div>
+                <div class="segmented-control">
+                    <button class="control-btn ${State.auditFilter === 'all' ? 'active' : ''}" id="filter-all" onclick="setAuditFilter('all')">All</button>
+                    <button class="control-btn ${State.auditFilter === 'perfect' ? 'active' : ''}" id="filter-perfect" onclick="setAuditFilter('perfect')">Perfect</button>
+                    <button class="control-btn ${State.auditFilter === 'markdowns' ? 'active' : ''}" id="filter-markdowns" onclick="setAuditFilter('markdowns')">Markdowns</button>
+                </div>
+            </div>
+        </div>
+        <div class="case-list">
+            <div class="case-list-header">
+                <div>CASE ID</div>
+                <div>CUST</div>
+                <div>BUS</div>
+                <div>COMP</div>
+                <div>MARKDOWNS</div>
+                <div style="text-align:right;">ACTION</div>
+            </div>
+            <div id="case-list-container">
+                ${data.caseLog.map((c, i) => renderCaseCard(c, i)).join('')}
+            </div>
+        </div>
+    </div>
+  `;
+
+  renderCharts(data);
+}
+
+function renderCaseCard(c, index) {
+    const custScore = Number(c.customer) || 0;
+    const busScore = Number(c.business) || 0;
+    const compScore = Number(c.compliance) || 0;
+
+    const isPerfect = custScore >= 1 && busScore >= 1 && compScore >= 1; // Assuming 1 is max score from sheet or 100%
+    // Actually in aggregateQualityRows it multiplies by 100.
+    // In clientGetMyQuality, r[Q_COLS.CUSTOMER_CRITICAL] is the raw value (usually 0 to 1).
+    // Let's check QualityService.gs again.
+
+    const isPerfectAudit = (custScore >= 0.999 && busScore >= 0.999 && compScore >= 0.999);
+
+    let markdownsHtml = '';
+    if (isPerfectAudit) {
+        markdownsHtml = '<span class="perfect-audit-text">Perfect Audit!</span>';
+    } else {
+        const tags = [];
+        const catMap = { 'customer': { label: 'Cust', class: 'cust' }, 'business': { label: 'Bus', class: 'bus' }, 'compliance': { label: 'Comp', class: 'comp' } };
+        for (const cat in c.details) {
+            for (const param in c.details[cat]) {
+                const val = String(c.details[cat][param]).toLowerCase();
+                if (val === 'no' || val === '0') {
+                    const info = catMap[cat] || { label: cat, class: 'gray' };
+                    tags.push(`<span class="markdown-tag tag-${info.class}">${info.label}: ${param.replace(/_/g, ' ')}</span>`);
+                }
+            }
+        }
+        markdownsHtml = `<div class="markdown-tags">${tags.join('')}</div>`;
+    }
+
+    const escapedComments = (c.comments || '').replace(/"/g, '&quot;').toLowerCase();
+
+    return `
+        <div class="case-card" data-perfect="${isPerfectAudit}" data-markdown="${!isPerfectAudit}" data-comments="${escapedComments}">
+            <div class="case-summary">
+                <div class="case-id-group">
+                    <a href="javascript:void(0)" class="case-id-link" onclick="copyToClipboard('${c.caseId}')">
+                        ${c.caseId} <i class="ph ph-copy"></i>
+                    </a>
+                    <span class="case-date">${c.reviewDate}</span>
+                </div>
+                <div class="case-status-icon ${custScore >= 0.95 ? 'pass' : 'fail'}">
+                    <i class="ph-fill ${custScore >= 0.95 ? 'ph-check-circle' : 'ph-x-circle'}"></i>
+                </div>
+                <div class="case-status-icon ${busScore >= 0.90 ? 'pass' : 'fail'}">
+                    <i class="ph-fill ${busScore >= 0.90 ? 'ph-check-circle' : 'ph-x-circle'}"></i>
+                </div>
+                <div class="case-status-icon ${compScore >= 0.995 ? 'pass' : 'fail'}">
+                    <i class="ph-fill ${compScore >= 0.995 ? 'ph-check-circle' : 'ph-x-circle'}"></i>
+                </div>
+                <div>${markdownsHtml}</div>
+                <div style="text-align:right;">
+                    <button class="details-btn" onclick="toggleCaseDetails(${index})">Details</button>
+                </div>
+            </div>
+            <div class="case-details-expanded" id="details-${index}">
+                <div class="reviewer-comments-box">
+                    <div class="reviewer-comments-title">Reviewer Comments:</div>
+                    <div class="reviewer-comments-text">"${c.comments || 'No comments'}"</div>
+                </div>
+                <div class="params-details-grid">
+                    ${renderParamDetailsCol('CUSTOMER', c.details.customer, 'cust')}
+                    ${renderParamDetailsCol('BUSINESS', c.details.business, 'bus')}
+                    ${renderParamDetailsCol('COMPLIANCE', c.details.compliance, 'comp')}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function renderParamDetailsCol(title, params, classSuffix) {
+    let rows = '';
+    for (const p in params) {
+        const val = String(params[p]).toLowerCase();
+        if (!val || val === 'undefined') continue;
+
+        const isPass = val === 'yes' || val === '1';
+        const isFail = val === 'no' || val === '0';
+        const displayVal = isPass ? 'PASS' : (isFail ? 'FAIL' : 'N/A');
+        const colorClass = isPass ? 'pass' : (isFail ? 'fail' : 'neutral');
+
+        rows += `
+            <div class="param-row">
+                <span class="param-label">${p.replace(/_/g, ' ').toLowerCase()}</span>
+                <span class="param-val ${colorClass}">${displayVal}</span>
+            </div>
+        `;
+    }
+    return `
+        <div>
+            <div class="param-col-title col-${classSuffix}">${title}</div>
+            <div class="param-rows-container">
+                ${rows}
+            </div>
+        </div>
+    `;
+}
+
+function setAuditFilter(filter) {
+    State.auditFilter = filter;
+    document.querySelectorAll('.audit-filters .control-btn').forEach(btn => btn.classList.remove('active'));
+    document.getElementById(`filter-${filter}`).classList.add('active');
+    filterCaseList();
+}
+
+function filterCaseList() {
+    const query = (document.getElementById('audit-search-input')?.value || '').toLowerCase();
+    const filter = State.auditFilter;
+    const cards = document.querySelectorAll('.case-card');
+
+    cards.forEach(card => {
+        const caseId = card.querySelector('.case-id-link').textContent.toLowerCase();
+        const comments = card.getAttribute('data-comments');
+        const isPerfect = card.getAttribute('data-perfect') === 'true';
+        const isMarkdown = card.getAttribute('data-markdown') === 'true';
+
+        const matchesQuery = caseId.includes(query) || comments.includes(query);
+        let matchesFilter = true;
+        if (filter === 'perfect') matchesFilter = isPerfect;
+        else if (filter === 'markdowns') matchesFilter = isMarkdown;
+
+        card.style.display = (matchesQuery && matchesFilter) ? 'block' : 'none';
+    });
+}
+
+function toggleCaseDetails(index) {
+    const el = document.getElementById(`details-${index}`);
+    if (el) {
+        const isActive = el.classList.contains('active');
+        // Close all others maybe? No, let's allow multiple open.
+        el.classList.toggle('active');
+    }
+}
+
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        const feedback = document.createElement('div');
+        feedback.style.position = 'fixed';
+        feedback.style.bottom = '20px';
+        feedback.style.left = '50%';
+        feedback.style.transform = 'translateX(-50%)';
+        feedback.style.background = 'rgba(0,0,0,0.8)';
+        feedback.style.color = 'white';
+        feedback.style.padding = '8px 16px';
+        feedback.style.borderRadius = '20px';
+        feedback.style.fontSize = '12px';
+        feedback.style.zIndex = '10000';
+        feedback.textContent = 'Case ID copied to clipboard';
+        document.body.appendChild(feedback);
+        setTimeout(() => feedback.remove(), 2000);
+    });
+}
+
+function renderPremiumScoreCard(title, score, target) {
+    const s = Number(score) || 0;
+    const t = Number(target) || 0;
+    const isPass = s >= t;
+    return `
+        <div class="card">
+            <div class="card-title">${title}</div>
+            <div class="score-value" style="color: ${isPass ? 'var(--apple-green)' : 'var(--apple-red)'}">${s.toFixed(1)}%</div>
+            <div class="trend-badge ${isPass ? 'trend-up' : 'trend-down'}">
+                <i class="ph ${isPass ? 'ph-check-circle' : 'ph-warning'}"></i>
+                Target: ${t}%
+            </div>
+        </div>
+    `;
+}
+
+function renderParamGroup(title, params) {
+    return `
+        <div class="param-group">
+            <div class="param-group-title">${title}</div>
+            <div class="param-list">
+                ${params.map(p => {
+                    if (p.score === null) return '';
+                    const score = Number(p.score) || 0;
+                    return `
+                        <div class="param-item">
+                            <div class="param-info">
+                                <span class="param-name">${p.name.replace(/_/g, ' ')}</span>
+                                <span class="param-score">${score.toFixed(0)}%</span>
+                            </div>
+                            <div class="param-progress-bg">
+                                <div class="param-progress-fill" style="width: ${score}%; background: ${score >= 95 ? 'var(--apple-green)' : (score >= 90 ? 'var(--apple-blue)' : 'var(--apple-orange)')}"></div>
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        </div>
+    `;
+}
+
+function toggleTrendView(view) {
+    State.trendView = view;
+    renderAgentView();
+}
+
+function renderCharts(data) {
+    const s = data.stats;
+    if (!s) return;
+
+    const chartOptions = {
+        chart: {
+            height: 350,
+            toolbar: { show: false },
+            fontFamily: 'Inter, -apple-system, sans-serif',
+            animations: { enabled: true, easing: 'easeinout', speed: 800 }
+        },
+        dataLabels: { enabled: false },
+        stroke: { curve: 'smooth', width: 3, lineCap: 'round' },
+        grid: { borderColor: 'rgba(0,0,0,0.05)', strokeDashArray: 4 },
+        xaxis: {
+            axisBorder: { show: false },
+            axisTicks: { show: false },
+            labels: { style: { colors: '#86868B' } }
+        },
+        yaxis: { labels: { style: { colors: '#86868B' } }, min: 0, max: 100 },
+        tooltip: { theme: 'light', x: { show: false } }
+    };
+
+    // Trends
+    const trendsEl = document.querySelector("#chart-trends");
+    const trendData = (State.trendView === 'daily') ? data.trends.daily : data.trends.weekly;
+
+    if (trendsEl && trendData && trendData.length > 0) {
+        new ApexCharts(trendsEl, {
+            ...chartOptions,
+            series: [
+                { name: 'Customer', data: trendData.map(d => Number(d.customer || 0).toFixed(1)) },
+                { name: 'Business', data: trendData.map(d => Number(d.business || 0).toFixed(1)) },
+                { name: 'Compliance', data: trendData.map(d => Number(d.compliance || 0).toFixed(1)) }
+            ],
+            chart: { ...chartOptions.chart, type: 'area' },
+            colors: ['#007AFF', '#34C759', '#FF3B30'],
+            xaxis: { ...chartOptions.xaxis, categories: trendData.map(d => d.label) },
+            fill: {
+                type: 'gradient',
+                gradient: {
+                    shadeIntensity: 1,
+                    opacityFrom: 0.3,
+                    opacityTo: 0.05,
+                    stops: [0, 90, 100]
+                }
+            }
+        }).render();
+    }
+
+    // Radar
+    const radarEl = document.querySelector("#chart-radar");
+    if (radarEl) {
+        const targets = s.targets || { CUSTOMER: 95, BUSINESS: 90, COMPLIANCE: 99.5 };
+        new ApexCharts(radarEl, {
+            ...chartOptions,
+            series: [
+                {
+                    name: 'Current',
+                    data: [
+                        Number(s.customer || 0).toFixed(1),
+                        Number(s.business || 0).toFixed(1),
+                        Number(s.compliance || 0).toFixed(1)
+                    ]
+                },
+                {
+                    name: 'Target',
+                    data: [targets.CUSTOMER, targets.BUSINESS, targets.COMPLIANCE]
+                }
+            ],
+            chart: {
+                ...chartOptions.chart,
+                type: 'radar',
+                height: 350,
+                dropShadow: { enabled: true, blur: 8, left: 1, top: 1, opacity: 0.1 }
+            },
+            plotOptions: {
+                radar: {
+                    polygons: {
+                        strokeColors: 'rgba(0,0,0,0.05)',
+                        connectorColors: 'rgba(0,0,0,0.05)',
+                        fill: { colors: ['#fcfcfc', '#fff'] }
+                    }
+                }
+            },
+            xaxis: {
+                categories: ['Customer', 'Business', 'Compliance'],
+                labels: { style: { colors: '#86868B', fontWeight: 600 } }
+            },
+            yaxis: { show: false, min: 0, max: 100 },
+            colors: ['#007AFF', '#34C759'],
+            fill: { opacity: [0.35, 0.1] },
+            stroke: { show: true, width: 2 },
+            markers: { size: 0, hover: { size: 6 } },
+            legend: { position: 'bottom', horizontalAlign: 'center', offsetY: 10 }
+        }).render();
+    }
+}
+
+function renderTeamView() {
+    const data = State.filteredData;
+    const container = document.getElementById('view-content');
+    if (!container) return;
+
+    if (!data || !data.hasData) {
+      container.innerHTML = `
+        <div class="card grid-span-4" style="text-align:center; padding: 80px;">
+          <i class="ph ph-mask-sad" style="font-size: 64px; color: var(--apple-gray); margin-bottom: 20px; display:block;"></i>
+          <div style="font-size: 20px; font-weight: 700;">No Team Data Found</div>
+          <div style="color: var(--text-secondary); margin-top: 8px;">Check selectors or ensure audits exist for ${State.selectedSup}</div>
+        </div>
+      `;
+      return;
+    }
+
+    const s = data.stats;
+    const avg = ((s.customer || 0) + (s.business || 0) + (s.compliance || 0)) / 3;
+    container.innerHTML = `
+        <div class="card">${renderMiniStat('Team Avg', Number(avg || 0).toFixed(1) + '%')}</div>
+        ${renderPremiumScoreCard('Customer', s.customer || 0, s.targets.CUSTOMER)}
+        ${renderPremiumScoreCard('Business', s.business || 0, s.targets.BUSINESS)}
+        ${renderPremiumScoreCard('Compliance', s.compliance || 0, s.targets.COMPLIANCE)}
+
+        <div class="card grid-span-3">
+            <div class="card-title">Team Performance Trends</div>
+            <div id="chart-trends" style="height: 350px;"></div>
+        </div>
+        <div class="card">
+            <div class="card-title">Team Distribution</div>
+            <div id="chart-radar" style="height: 350px;"></div>
+        </div>
+
+        <div class="card grid-span-4">
+            <div class="card-title">Agent Rankings</div>
+            <div class="ranking-list">
+                ${data.agents.map((a, i) => {
+                    const agentAvg = ((Number(a.stats.customer) || 0) + (Number(a.stats.business) || 0) + (Number(a.stats.compliance) || 0)) / 3;
+                    return `
+                        <div class="ranking-item">
+                            <div class="rank-num">${i+1}</div>
+                            <div class="rank-ldap">${a.ldap}</div>
+                            <div class="rank-bar-bg"><div class="rank-bar-fill" style="width: ${agentAvg}%"></div></div>
+                            <div class="rank-score">${agentAvg.toFixed(1)}%</div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        </div>
+    `;
+    renderCharts(data);
+}
+
+function renderClusterView() {
+    const data = State.filteredData;
+    const container = document.getElementById('view-content');
+    if (!container) return;
+
+    if (!data || !data.hasData) {
+      container.innerHTML = `<div class="card grid-span-4" style="text-align:center; padding: 80px;">No Cluster Data Found</div>`;
+      return;
+    }
+
+    const s = data.stats;
+    container.innerHTML = `
+        <div class="card grid-span-4" style="display:grid; grid-template-columns: repeat(4, 1fr); gap: 20px;">
+            ${renderMiniStat('Total Audits', s.count || 0)}
+            ${renderMiniStat('Cust. Avg', Number(s.customer || 0).toFixed(1) + '%')}
+            ${renderMiniStat('Bus. Avg', Number(s.business || 0).toFixed(1) + '%')}
+            ${renderMiniStat('Comp. Avg', Number(s.compliance || 0).toFixed(1) + '%')}
+        </div>
+
+        <div class="card grid-span-3">
+            <div class="card-title">Cluster Performance Trends</div>
+            <div id="chart-trends" style="height: 350px;"></div>
+        </div>
+        <div class="card">
+            <div class="card-title">Cluster Distribution</div>
+            <div id="chart-radar" style="height: 350px;"></div>
+        </div>
+
+        <div class="card grid-span-4">
+            <div class="card-title">Supervisor Rankings</div>
+            <div class="ranking-list">
+                ${data.supervisors.map((sup, i) => {
+                    const supAvg = ((Number(sup.stats.customer) || 0) + (Number(sup.stats.business) || 0) + (Number(sup.stats.compliance) || 0)) / 3;
+                    return `
+                        <div class="ranking-item">
+                            <div class="rank-num">${i+1}</div>
+                            <div class="rank-ldap" style="width: 200px;">${sup.name}</div>
+                            <div class="rank-bar-bg"><div class="rank-bar-fill" style="width: ${supAvg}%; background: var(--apple-blue);"></div></div>
+                            <div class="rank-score">${supAvg.toFixed(1)}%</div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        </div>
+    `;
+    renderCharts(data);
+}
+
+function renderMiniStat(label, val) {
+    return `
+        <div style="text-align:center;">
+            <div style="font-size:11px; font-weight:700; color:var(--text-secondary); text-transform:uppercase; margin-bottom:8px;">${label}</div>
+            <div style="font-size:24px; font-weight:800;">${val}</div>
+        </div>
+    `;
+}
+
+// Helpers
+function callServer(method, args = []) {
+  return new Promise((resolve, reject) => {
+    google.script.run
+      .withSuccessHandler(resolve)
+      .withFailureHandler(reject)
+      [method](...args);
+  });
+}
+
+function showLoader(show) {
+  const loader = document.getElementById('app-loader');
+  if (loader) loader.style.display = show ? 'flex' : 'none';
+}
+
+function switchTab(tab) {
+  State.currentTab = tab;
+
+  // Sidebar UI
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  const activeNav = document.getElementById(`nav-${tab}`);
+  if (activeNav) activeNav.classList.add('active');
+
+  // Header UI
+  const title = document.getElementById('page-title');
+  const subtitle = document.getElementById('page-subtitle');
+  if (tab === 'agent') {
+      title.textContent = 'Agent Performance';
+      subtitle.textContent = 'Personal Quality Score Overview';
+  } else if (tab === 'team') {
+      title.textContent = 'Team Rankings';
+      subtitle.textContent = 'Supervisor Group Performance';
+  } else {
+      title.textContent = 'Cluster Overview';
+      subtitle.textContent = 'Manager Level Aggregations';
+  }
+
+  // Selectors visibility
+  const selAgent = document.getElementById('selector-agent');
+  const selTeam = document.getElementById('selector-team');
+  const selCluster = document.getElementById('selector-cluster');
+
+  if (selAgent) selAgent.style.display = tab === 'agent' ? 'grid' : 'none';
+  if (selTeam) selTeam.style.display = tab === 'team' ? 'grid' : 'none';
+  if (selCluster) selCluster.style.display = tab === 'cluster' ? 'grid' : 'none';
+
+  fetchData();
+}
+
+function forceRefresh() {
+  const btn = document.querySelector('.refresh-btn');
+  if (btn) btn.classList.add('spinning');
+
+  // Clear frontend session cache first
+  try { sessionStorage.removeItem('q_initial_data'); } catch(e) {}
+
+  initApp(true).finally(() => {
+    if (btn) btn.classList.remove('spinning');
+  });
+}
+</script>
