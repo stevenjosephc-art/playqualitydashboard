@@ -72,7 +72,7 @@ async function initApp(forceRefresh = false) {
         console.log('QualityOS: Root displayed.');
     }
 
-    await fetchData();
+    await fetchData(forceRefresh);
 
   } catch (e) {
     console.error('QualityOS Error:', e);
@@ -302,43 +302,6 @@ function renderProfileInfo(data) {
     }
 }
 
-function renderProfileInfo(data) {
-    const wrapper = document.getElementById('selector-agent');
-    if (!wrapper) return;
-
-    // Remove old profile info if exists
-    const old = wrapper.querySelector('.agent-profile-info');
-    if (old) old.remove();
-
-    if (data && data.hasData && data.metadata) {
-        const m = data.metadata;
-        const info = document.createElement('div');
-        info.className = 'agent-profile-info fade-in';
-        info.innerHTML = `
-            <div class="profile-meta-item">
-                <span class="profile-meta-label">Supervisor</span>
-                <span class="profile-meta-value">${m.supervisor || 'N/A'}</span>
-            </div>
-            <div class="profile-meta-item">
-                <span class="profile-meta-label">Team</span>
-                <span class="profile-meta-value">${m.team || 'N/A'}</span>
-            </div>
-            <div class="profile-meta-item">
-                <span class="profile-meta-label">LOB</span>
-                <span class="profile-meta-value">${m.lob || 'N/A'}</span>
-            </div>
-        `;
-        wrapper.appendChild(info);
-
-        // Adjust grid span to make room
-        const searchGroup = wrapper.querySelector('.search-group');
-        if (searchGroup) searchGroup.className = 'input-group search-group grid-span-2';
-    } else {
-        const searchGroup = wrapper.querySelector('.search-group');
-        if (searchGroup) searchGroup.className = 'input-group search-group grid-span-4';
-    }
-}
-
 function renderView() {
   if (State.currentTab === 'agent') {
     renderAgentView();
@@ -373,22 +336,16 @@ function renderAgentView() {
     ${renderTopOpportunities(s.groupedParams)}
 
     <!-- Top Level Cards -->
-    ${renderPremiumScoreCard('Customer Critical', s.customer || 0, s.targets.CUSTOMER)}
-    ${renderPremiumScoreCard('Business Critical', s.business || 0, s.targets.BUSINESS)}
-    ${renderPremiumScoreCard('Compliance Critical', s.compliance || 0, s.targets.COMPLIANCE)}
-
     <div class="card">
       <div class="card-title">Total Audits</div>
       <div class="score-value">${s.count}</div>
       <div class="trend-badge trend-up"><i class="ph ph-trend-up"></i> ${State.selectedMonth}</div>
     </div>
+    ${renderPremiumScoreCard('Customer Critical', s.customer || 0, s.targets.CUSTOMER)}
+    ${renderPremiumScoreCard('Business Critical', s.business || 0, s.targets.BUSINESS)}
+    ${renderPremiumScoreCard('Compliance Critical', s.compliance || 0, s.targets.COMPLIANCE)}
 
     <!-- Graphs -->
-    <div class="card">
-        <div class="card-title">Distribution</div>
-        <div id="chart-radar" style="height: 350px;"></div>
-    </div>
-
     <div class="card grid-span-3">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
             <div class="card-title" style="margin:0;">Performance Trends</div>
@@ -398,6 +355,11 @@ function renderAgentView() {
             </div>
         </div>
         <div id="chart-trends" style="height: 350px;"></div>
+    </div>
+
+    <div class="card">
+        <div class="card-title">Distribution</div>
+        <div id="chart-radar" style="height: 350px;"></div>
     </div>
 
     <!-- Parameter Breakdown -->
@@ -745,16 +707,35 @@ function renderParamGroup(title, params) {
             <div class="param-group-title">${title}</div>
             <div class="param-list">
                 ${params.map(p => {
-                    if (p.score === null) return '';
-                    const score = Number(p.score) || 0;
+                    const hasData = p.score !== null;
+                    const score = hasData ? Number(p.score) : 0;
+                    const scoreDisplay = hasData ? score.toFixed(0) + '%' : '—';
+
+                    let barColor = 'var(--apple-light-gray)';
+                    let textColor = 'var(--text-primary)';
+                    let weight = '500';
+
+                    if (hasData) {
+                        if (score >= 95) barColor = 'var(--apple-green)';
+                        else if (score >= 90) barColor = 'var(--apple-blue)';
+                        else if (score > 0) barColor = 'var(--apple-orange)';
+                        else {
+                            barColor = 'var(--apple-red)';
+                            textColor = 'var(--apple-red)';
+                            weight = '700';
+                        }
+                    } else {
+                        textColor = 'var(--text-secondary)';
+                    }
+
                     return `
-                        <div class="param-item">
+                        <div class="param-item" style="${!hasData ? 'opacity: 0.6;' : ''}">
                             <div class="param-info">
-                                <span class="param-name">${p.name.replace(/_/g, ' ')}</span>
-                                <span class="param-score">${score.toFixed(0)}%</span>
+                                <span class="param-name" style="color: ${textColor}; font-weight: ${weight}">${p.name.replace(/_/g, ' ')}</span>
+                                <span class="param-score" style="color: ${textColor}; font-weight: 700">${scoreDisplay}</span>
                             </div>
                             <div class="param-progress-bg">
-                                <div class="param-progress-fill" style="width: ${score}%; background: ${score >= 95 ? 'var(--apple-green)' : (score >= 90 ? 'var(--apple-blue)' : 'var(--apple-orange)')}"></div>
+                                <div class="param-progress-fill" style="width: ${score}%; background: ${barColor}"></div>
                             </div>
                         </div>
                     `;

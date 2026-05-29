@@ -50,7 +50,7 @@ function getColMapping() {
   map.CASE_MONTH = find('case_start_month');
   map.CUSTOMER_CRITICAL = find('Customer');
   map.BUSINESS_CRITICAL = find('Business');
-  map.COMPLIANCE_CRITICAL = find('compliance');
+  map.COMPLIANCE_CRITICAL = find('Compliance');
   map.REVIEWER_COMMENTS = find('comment');
 
   // Critical Parameters
@@ -272,6 +272,17 @@ function formatDate(val) {
 
 // ── AGGREGATION ───────────────────────────────────────────────────────────
 
+function parseSheetScore(val) {
+  if (val === null || val === undefined || val === '') return 0;
+  if (typeof val === 'number') return val;
+  var s = String(val).toLowerCase().trim();
+  if (s === 'yes' || s === 'pass' || s === '1') return 1;
+  if (s === 'no' || s === 'fail' || s === '0') return 0;
+  var n = parseFloat(s.replace('%', ''));
+  if (!isNaN(n)) return n > 1 ? n / 100 : n;
+  return 0;
+}
+
 function aggregateQualityRows(rows) {
   if (!rows || rows.length === 0) return null;
 
@@ -284,9 +295,9 @@ function aggregateQualityRows(rows) {
 
   for (var j = 0; j < rows.length; j++) {
     var r = rows[j];
-    customerSum += (parseFloat(r[Q_COLS.CUSTOMER_CRITICAL]) || 0);
-    businessSum += (parseFloat(r[Q_COLS.BUSINESS_CRITICAL]) || 0);
-    complianceSum += (parseFloat(r[Q_COLS.COMPLIANCE_CRITICAL]) || 0);
+    customerSum += parseSheetScore(r[Q_COLS.CUSTOMER_CRITICAL]);
+    businessSum += parseSheetScore(r[Q_COLS.BUSINESS_CRITICAL]);
+    complianceSum += parseSheetScore(r[Q_COLS.COMPLIANCE_CRITICAL]);
 
     for (var k = 0; k < Q_PARAM_COLS.length; k++) {
       var p = Q_PARAM_COLS[k];
@@ -337,9 +348,9 @@ function aggregateTrends(rows) {
       var t = trends[j];
       if (!t.key) continue;
       if (!t.obj[t.key]) t.obj[t.key] = { customer: 0, business: 0, compliance: 0, count: 0 };
-      t.obj[t.key].customer += (parseFloat(r[Q_COLS.CUSTOMER_CRITICAL]) || 0);
-      t.obj[t.key].business += (parseFloat(r[Q_COLS.BUSINESS_CRITICAL]) || 0);
-      t.obj[t.key].compliance += (parseFloat(r[Q_COLS.COMPLIANCE_CRITICAL]) || 0);
+      t.obj[t.key].customer += parseSheetScore(r[Q_COLS.CUSTOMER_CRITICAL]);
+      t.obj[t.key].business += parseSheetScore(r[Q_COLS.BUSINESS_CRITICAL]);
+      t.obj[t.key].compliance += parseSheetScore(r[Q_COLS.COMPLIANCE_CRITICAL]);
       t.obj[t.key].count++;
     }
   }
