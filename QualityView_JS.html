@@ -383,13 +383,23 @@ function renderCaseCard(c, index) {
 
     const tags = [];
     const catMap = { 'customer': { label: 'Cust', class: 'cust' }, 'business': { label: 'Bus', class: 'bus' }, 'compliance': { label: 'Comp', class: 'comp' } };
+
     for (const cat in c.details) {
+        let catHasMarkdown = false;
         for (const param in c.details[cat]) {
             const val = String(c.details[cat][param]).toLowerCase().trim();
             if (val === 'no' || val === '0' || val === 'fail') {
                 const info = catMap[cat] || { label: cat, class: 'gray' };
                 tags.push(`<span class="markdown-tag tag-${info.class}">${info.label}: ${param.replace(/_/g, ' ')}</span>`);
+                catHasMarkdown = true;
             }
+        }
+
+        // Quality Improvement: If the critical score failed but no specific parameters were marked, add a generic Critical fail tag
+        const s = (cat === 'customer') ? custScore : (cat === 'business' ? busScore : compScore);
+        if (!isScorePass(s) && !catHasMarkdown) {
+            const info = catMap[cat] || { label: cat, class: 'gray' };
+            tags.push(`<span class="markdown-tag tag-${info.class}" style="background: var(--apple-red); color: white;">Critical ${info.label} Fail</span>`);
         }
     }
 
@@ -398,7 +408,10 @@ function renderCaseCard(c, index) {
 
     let markdownsHtml = '';
     if (isPerfectAudit) {
-        markdownsHtml = '<span class="perfect-audit-text" style="color: var(--apple-green); font-weight: 600; font-size: 13px;"><i class="ph-fill ph-seal-check"></i> Perfect Audit!</span>';
+        markdownsHtml = '<span class="perfect-audit-text" style="color: var(--apple-green); font-weight: 700; font-size: 13px; display: flex; align-items: center; gap: 4px;"><i class="ph-fill ph-seal-check"></i> Perfect Audit!</span>';
+    } else if (tags.length === 0) {
+        // Fallback for cases where scores might be slightly off but no tags exist
+        markdownsHtml = '<span style="color: var(--text-secondary); font-size: 12px; font-style: italic;">No specific markdowns</span>';
     } else {
         markdownsHtml = `<div class="markdown-tags">${tags.join('')}</div>`;
     }
@@ -445,9 +458,12 @@ function renderCaseCard(c, index) {
 
 function renderParamDetailsCol(title, params, classSuffix) {
     let rows = '';
-    for (const p in params) {
+    const sortedKeys = Object.keys(params).sort();
+    for (const p of sortedKeys) {
         const val = String(params[p]).toLowerCase();
-        if (!val || val === 'undefined') continue;
+        // If it is truly empty/null from the sheet, we can show it as N/A or skip
+        // But let's show all available parameters to match user screenshot
+        if (val === 'undefined') continue;
 
         const isPass = val === 'yes' || val === '1' || val === 'pass';
         const isFail = val === 'no' || val === '0' || val === 'fail';
@@ -484,15 +500,22 @@ function filterCaseList() {
     const cards = document.querySelectorAll('.case-card');
 
     cards.forEach(card => {
-        const caseId = card.querySelector('.case-id-link').textContent.toLowerCase();
-        const comments = card.getAttribute('data-comments');
-        const isPerfect = card.getAttribute('data-perfect') === 'true';
-        const isMarkdown = card.getAttribute('data-markdown') === 'true';
+        const caseId = (card.querySelector('.case-id-link')?.textContent || '').toLowerCase();
+        const comments = (card.getAttribute('data-comments') || '');
+        const isPerfect = (card.getAttribute('data-perfect') === 'true');
+        const isMarkdown = (card.getAttribute('data-markdown') === 'true');
 
         const matchesQuery = caseId.includes(query) || comments.includes(query);
         let matchesFilter = true;
-        if (filter === 'perfect') matchesFilter = isPerfect;
-        else if (filter === 'markdowns') matchesFilter = isMarkdown;
+
+        if (filter === 'perfect') {
+            matchesFilter = isPerfect;
+        } else if (filter === 'markdowns') {
+            matchesFilter = isMarkdown;
+        } else {
+            // 'all' filter - no restriction on perfect/markdown
+            matchesFilter = true;
+        }
 
         card.style.display = (matchesQuery && matchesFilter) ? 'block' : 'none';
     });

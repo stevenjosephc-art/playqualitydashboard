@@ -21,14 +21,19 @@ function getColMapping() {
   var map = {};
 
   var find = function(pattern) {
-    var p = pattern.toLowerCase();
-    // Prioritize exact match
+    var p = pattern.toLowerCase().replace(/_/g, ' ');
+    var pStrict = pattern.toLowerCase();
+
+    // 1. Exact Match
     for (var i = 0; i < headers.length; i++) {
-      if (String(headers[i]).toLowerCase() === p) return i;
+      var h = String(headers[i]).toLowerCase();
+      if (h === pStrict || h === p) return i;
     }
-    // Fallback to partial match
+
+    // 2. Partial Match
     for (var j = 0; j < headers.length; j++) {
-      if (String(headers[j]).toLowerCase().indexOf(p) !== -1) return j;
+      var hj = String(headers[j]).toLowerCase().replace(/_/g, ' ');
+      if (hj.indexOf(pStrict) !== -1 || hj.indexOf(p) !== -1 || pStrict.indexOf(hj) !== -1) return j;
     }
     return -1;
   };
