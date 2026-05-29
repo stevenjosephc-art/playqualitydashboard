@@ -265,6 +265,21 @@ async function fetchData(forceRefresh = false) {
   }
 }
 
+function handleImgError(img, chain) {
+    let currentSrc = img.src;
+    let index = chain.indexOf(currentSrc);
+    if (index === -1) {
+        // Try to find it by partial match if sz/type params are messing with it
+        index = chain.findIndex(url => currentSrc.includes(url.split('?')[0]));
+    }
+
+    if (index < chain.length - 1) {
+        img.src = chain[index + 1];
+    } else {
+        img.onerror = null; // Prevent infinite loop
+    }
+}
+
 function renderProfileInfo(data) {
     const wrapper = document.getElementById('selector-agent');
     if (!wrapper) return;
@@ -279,14 +294,18 @@ function renderProfileInfo(data) {
         info.className = 'agent-profile-info fade-in';
 
         const ldap = State.selectedLdap || '';
-        // Image logic: try PLUS first, then CUSTOM
-        const imgUrl = `https://moma-teams-photos.corp.google.com/photos/${ldap}?sz=600&type=PLUS`;
-        const fallbackUrl = `https://moma-teams-photos.corp.google.com/photos/${ldap}?sz=600&type=CUSTOM`;
+        const fallbackChain = [
+            `https://moma-teams-photos.corp.google.com/photos/${ldap}?sz=120&type=PLUS`,
+            `https://moma-teams-photos.corp.google.com/photos/${ldap}?sz=120&type=CUSTOM`,
+            `https://moma-teams-photos.corp.google.com/photos/${ldap}?sz=120`,
+            `https://ui-avatars.com/api/?name=${ldap}&background=007AFF&color=fff&size=120`
+        ];
 
         info.innerHTML = `
             <div class="profile-card-main">
                 <div class="profile-img-container">
-                    <img src="${imgUrl}" class="agent-profile-img" onerror="this.onerror=null;this.src='${fallbackUrl}';">
+                    <img src="${fallbackChain[0]}" class="agent-profile-img"
+                        onerror='handleImgError(this, ${JSON.stringify(fallbackChain)})'>
                 </div>
                 <div class="profile-meta-grid">
                     <div class="profile-meta-item">
@@ -349,16 +368,21 @@ function renderAgentView() {
     ${renderTopOpportunities(s.groupedParams)}
 
     <!-- Top Level Cards -->
+    ${renderPremiumScoreCard('Customer Critical', s.customer || 0, s.targets.CUSTOMER)}
+    ${renderPremiumScoreCard('Business Critical', s.business || 0, s.targets.BUSINESS)}
+    ${renderPremiumScoreCard('Compliance Critical', s.compliance || 0, s.targets.COMPLIANCE)}
     <div class="card">
       <div class="card-title">Total Audits</div>
       <div class="score-value">${s.count}</div>
       <div class="trend-badge trend-up"><i class="ph ph-trend-up"></i> ${State.selectedMonth}</div>
     </div>
-    ${renderPremiumScoreCard('Customer Critical', s.customer || 0, s.targets.CUSTOMER)}
-    ${renderPremiumScoreCard('Business Critical', s.business || 0, s.targets.BUSINESS)}
-    ${renderPremiumScoreCard('Compliance Critical', s.compliance || 0, s.targets.COMPLIANCE)}
 
     <!-- Graphs -->
+    <div class="card">
+        <div class="card-title">Distribution</div>
+        <div id="chart-radar" style="height: 350px;"></div>
+    </div>
+
     <div class="card grid-span-3">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
             <div class="card-title" style="margin:0;">Performance Trends</div>
@@ -368,11 +392,6 @@ function renderAgentView() {
             </div>
         </div>
         <div id="chart-trends" style="height: 350px;"></div>
-    </div>
-
-    <div class="card">
-        <div class="card-title">Distribution</div>
-        <div id="chart-radar" style="height: 350px;"></div>
     </div>
 
     <!-- Parameter Breakdown -->
@@ -476,12 +495,12 @@ function renderCaseCard(c, index) {
         <div class="case-card" data-perfect="${isPerfectAudit}" data-markdown="${!isPerfectAudit}" data-comments="${escapedComments}">
             <div class="case-summary">
                 <div class="case-id-group">
-                    <div style="display:flex; align-items:center; gap: 8px;">
-                        <i class="ph ph-file-text" style="color: var(--apple-blue); font-size: 16px;"></i>
+                    <div style="display:flex; align-items:center; gap: 4px;">
+                        <i class="ph ph-file-text" style="color: var(--apple-blue); font-size: 16px; margin-right: 4px;"></i>
                         <a href="https://cases.connect.corp.google.com/${c.caseId}" target="_blank" class="case-id-link">
-                            ${c.caseId || 'UNKNOWN'} <i class="ph ph-arrow-square-out" style="font-size: 10px;"></i>
+                            ${c.caseId || 'UNKNOWN'} <i class="ph ph-arrow-square-out" style="font-size: 11px;"></i>
                         </a>
-                        <i class="ph ph-copy" style="cursor:pointer; color: var(--text-secondary); font-size:14px;" onclick="copyToClipboard('${c.caseId}')" title="Copy Case ID"></i>
+                        <i class="ph ph-copy" style="cursor:pointer; color: var(--text-secondary); font-size:13px; margin-left: 2px;" onclick="copyToClipboard('${c.caseId}')" title="Copy Case ID"></i>
                     </div>
                     <span class="case-date">${c.reviewDate}</span>
                 </div>

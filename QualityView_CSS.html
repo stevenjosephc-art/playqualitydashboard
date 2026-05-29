@@ -658,8 +658,14 @@ input:checked + .toggle-slider:before {
   color: var(--apple-blue);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   text-decoration: none;
+  transition: opacity 0.2s;
+}
+
+.case-id-link:hover {
+  text-decoration: underline;
+  opacity: 0.8;
 }
 
 .case-date {
