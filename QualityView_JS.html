@@ -366,33 +366,40 @@ function renderAgentView() {
   renderCharts(data);
 }
 
+function parseScore(val) {
+    if (typeof val === 'number') return val;
+    if (val === null || val === undefined || val === '') return 0;
+    let s = String(val).replace('%', '').trim();
+    let n = parseFloat(s);
+    return isNaN(n) ? 0 : n;
+}
+
 function renderCaseCard(c, index) {
-    const custScore = Number(c.customer) || 0;
-    const busScore = Number(c.business) || 0;
-    const compScore = Number(c.compliance) || 0;
+    const custScore = parseScore(c.customer);
+    const busScore = parseScore(c.business);
+    const compScore = parseScore(c.compliance);
 
-    const isPerfect = custScore >= 1 && busScore >= 1 && compScore >= 1; // Assuming 1 is max score from sheet or 100%
-    // Actually in aggregateQualityRows it multiplies by 100.
-    // In clientGetMyQuality, r[Q_COLS.CUSTOMER_CRITICAL] is the raw value (usually 0 to 1).
-    // Let's check QualityService.gs again.
+    const isScorePass = (s) => (s >= 99.9 || (s >= 0.999 && s <= 1.1));
 
-    const isPerfectAudit = (custScore >= 0.999 && busScore >= 0.999 && compScore >= 0.999);
+    const tags = [];
+    const catMap = { 'customer': { label: 'Cust', class: 'cust' }, 'business': { label: 'Bus', class: 'bus' }, 'compliance': { label: 'Comp', class: 'comp' } };
+    for (const cat in c.details) {
+        for (const param in c.details[cat]) {
+            const val = String(c.details[cat][param]).toLowerCase().trim();
+            if (val === 'no' || val === '0' || val === 'fail') {
+                const info = catMap[cat] || { label: cat, class: 'gray' };
+                tags.push(`<span class="markdown-tag tag-${info.class}">${info.label}: ${param.replace(/_/g, ' ')}</span>`);
+            }
+        }
+    }
+
+    // A perfect audit must have 100% in all critical scores AND no markdown tags
+    const isPerfectAudit = isScorePass(custScore) && isScorePass(busScore) && isScorePass(compScore) && (tags.length === 0);
 
     let markdownsHtml = '';
     if (isPerfectAudit) {
-        markdownsHtml = '<span class="perfect-audit-text">Perfect Audit!</span>';
+        markdownsHtml = '<span class="perfect-audit-text" style="color: var(--apple-green); font-weight: 600; font-size: 13px;"><i class="ph-fill ph-seal-check"></i> Perfect Audit!</span>';
     } else {
-        const tags = [];
-        const catMap = { 'customer': { label: 'Cust', class: 'cust' }, 'business': { label: 'Bus', class: 'bus' }, 'compliance': { label: 'Comp', class: 'comp' } };
-        for (const cat in c.details) {
-            for (const param in c.details[cat]) {
-                const val = String(c.details[cat][param]).toLowerCase();
-                if (val === 'no' || val === '0') {
-                    const info = catMap[cat] || { label: cat, class: 'gray' };
-                    tags.push(`<span class="markdown-tag tag-${info.class}">${info.label}: ${param.replace(/_/g, ' ')}</span>`);
-                }
-            }
-        }
         markdownsHtml = `<div class="markdown-tags">${tags.join('')}</div>`;
     }
 
@@ -407,14 +414,14 @@ function renderCaseCard(c, index) {
                     </a>
                     <span class="case-date">${c.reviewDate}</span>
                 </div>
-                <div class="case-status-icon ${custScore >= 0.95 ? 'pass' : 'fail'}">
-                    <i class="ph-fill ${custScore >= 0.95 ? 'ph-check-circle' : 'ph-x-circle'}"></i>
+                <div class="case-status-icon ${(custScore >= 95 || (custScore >= 0.95 && custScore <= 1.1)) ? 'pass' : 'fail'}">
+                    <i class="ph-fill ${(custScore >= 95 || (custScore >= 0.95 && custScore <= 1.1)) ? 'ph-check-circle' : 'ph-x-circle'}"></i>
                 </div>
-                <div class="case-status-icon ${busScore >= 0.90 ? 'pass' : 'fail'}">
-                    <i class="ph-fill ${busScore >= 0.90 ? 'ph-check-circle' : 'ph-x-circle'}"></i>
+                <div class="case-status-icon ${(busScore >= 90 || (busScore >= 0.90 && busScore <= 1.1)) ? 'pass' : 'fail'}">
+                    <i class="ph-fill ${(busScore >= 90 || (busScore >= 0.90 && busScore <= 1.1)) ? 'ph-check-circle' : 'ph-x-circle'}"></i>
                 </div>
-                <div class="case-status-icon ${compScore >= 0.995 ? 'pass' : 'fail'}">
-                    <i class="ph-fill ${compScore >= 0.995 ? 'ph-check-circle' : 'ph-x-circle'}"></i>
+                <div class="case-status-icon ${(compScore >= 99.5 || (compScore >= 0.995 && compScore <= 1.1)) ? 'pass' : 'fail'}">
+                    <i class="ph-fill ${(compScore >= 99.5 || (compScore >= 0.995 && compScore <= 1.1)) ? 'ph-check-circle' : 'ph-x-circle'}"></i>
                 </div>
                 <div>${markdownsHtml}</div>
                 <div style="text-align:right;">
@@ -442,8 +449,8 @@ function renderParamDetailsCol(title, params, classSuffix) {
         const val = String(params[p]).toLowerCase();
         if (!val || val === 'undefined') continue;
 
-        const isPass = val === 'yes' || val === '1';
-        const isFail = val === 'no' || val === '0';
+        const isPass = val === 'yes' || val === '1' || val === 'pass';
+        const isFail = val === 'no' || val === '0' || val === 'fail';
         const displayVal = isPass ? 'PASS' : (isFail ? 'FAIL' : 'N/A');
         const colorClass = isPass ? 'pass' : (isFail ? 'fail' : 'neutral');
 

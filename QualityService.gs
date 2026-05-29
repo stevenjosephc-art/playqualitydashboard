@@ -45,8 +45,8 @@ function getColMapping() {
   map.CASE_MONTH = find('case_start_month');
   map.CUSTOMER_CRITICAL = find('Customer');
   map.BUSINESS_CRITICAL = find('Business');
-  map.COMPLIANCE_CRITICAL = find('compliance_critical'); // Adjust if named differently
-  map.REVIEWER_COMMENTS = find('reviewer_comments');
+  map.COMPLIANCE_CRITICAL = find('compliance');
+  map.REVIEWER_COMMENTS = find('comment');
 
   // Critical Parameters
   map.LISTENING = find('listening');
