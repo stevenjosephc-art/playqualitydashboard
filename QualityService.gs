@@ -172,6 +172,8 @@ function getRawQualityData(forceRefresh) {
 
   getColMapping();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) throw new Error("Active spreadsheet not found.");
+
   var sheet = ss.getSheetByName(QUALITY_SHEET_NAME);
   if (!sheet) throw new Error("Sheet '" + QUALITY_SHEET_NAME + "' not found.");
 
