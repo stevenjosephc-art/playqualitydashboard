@@ -288,6 +288,35 @@ body.apple-style {
   width: 100%;
 }
 
+.agent-profile-info {
+  display: flex;
+  gap: 32px;
+  padding: 0 16px;
+  border-left: 1px solid rgba(0,0,0,0.1);
+  height: 40px;
+  align-items: center;
+}
+
+.profile-meta-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.profile-meta-label {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.profile-meta-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
 .autocomplete-dropdown {
   position: absolute;
   top: 100%;
@@ -645,6 +674,59 @@ input:checked + .toggle-slider:before {
 .tag-cust { background: rgba(0, 122, 255, 0.1); color: var(--apple-blue); border: 1px solid rgba(0, 122, 255, 0.2); }
 .tag-bus { background: rgba(52, 199, 89, 0.1); color: var(--apple-green); border: 1px solid rgba(52, 199, 89, 0.2); }
 .tag-comp { background: rgba(255, 59, 48, 0.1); color: var(--apple-red); border: 1px solid rgba(255, 59, 48, 0.2); }
+
+/* Opportunities Card */
+.opportunities-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+.opportunity-card {
+  background: white;
+  border-radius: 12px;
+  padding: 16px;
+  border: 1px solid rgba(0,0,0,0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.opp-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.opp-cat {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--apple-blue);
+}
+
+.opp-score {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--apple-red);
+}
+
+.opp-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.opp-tip {
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--apple-light-gray);
+  padding: 8px 12px;
+  border-radius: 8px;
+  border-left: 3px solid var(--apple-orange);
+}
 
 .details-btn {
   background: var(--apple-light-gray);

@@ -435,12 +435,22 @@ function clientGetMyQuality(ldap, month, forceRefresh) {
     };
   });
 
+  var metadata = { lob: '', supervisor: '', team: '', manager: '' };
+  if (filtered.length > 0) {
+    var r0 = filtered[0];
+    metadata.lob = String(r0[Q_COLS.LOB] || '').trim();
+    metadata.supervisor = String(r0[Q_COLS.SUPERVISOR] || '').trim();
+    metadata.team = String(r0[Q_COLS.TEAM] || '').trim();
+    metadata.manager = String(r0[Q_COLS.MANAGER] || '').trim();
+  }
+
   var result = {
     ldap: ldap,
     month: month,
     stats: stats,
     trends: trends,
     caseLog: caseLog,
+    metadata: metadata,
     hasData: filtered.length > 0
   };
 

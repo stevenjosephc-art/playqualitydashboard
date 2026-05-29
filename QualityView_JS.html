@@ -265,6 +265,80 @@ async function fetchData(forceRefresh = false) {
   }
 }
 
+function renderProfileInfo(data) {
+    const wrapper = document.getElementById('selector-agent');
+    if (!wrapper) return;
+
+    // Remove old profile info if exists
+    const old = wrapper.querySelector('.agent-profile-info');
+    if (old) old.remove();
+
+    if (data && data.hasData && data.metadata) {
+        const m = data.metadata;
+        const info = document.createElement('div');
+        info.className = 'agent-profile-info fade-in';
+        info.innerHTML = `
+            <div class="profile-meta-item">
+                <span class="profile-meta-label">Supervisor</span>
+                <span class="profile-meta-value">${m.supervisor || 'N/A'}</span>
+            </div>
+            <div class="profile-meta-item">
+                <span class="profile-meta-label">Team</span>
+                <span class="profile-meta-value">${m.team || 'N/A'}</span>
+            </div>
+            <div class="profile-meta-item">
+                <span class="profile-meta-label">LOB</span>
+                <span class="profile-meta-value">${m.lob || 'N/A'}</span>
+            </div>
+        `;
+        wrapper.appendChild(info);
+
+        // Adjust grid span to make room
+        const searchGroup = wrapper.querySelector('.search-group');
+        if (searchGroup) searchGroup.className = 'input-group search-group grid-span-2';
+    } else {
+        const searchGroup = wrapper.querySelector('.search-group');
+        if (searchGroup) searchGroup.className = 'input-group search-group grid-span-4';
+    }
+}
+
+function renderProfileInfo(data) {
+    const wrapper = document.getElementById('selector-agent');
+    if (!wrapper) return;
+
+    // Remove old profile info if exists
+    const old = wrapper.querySelector('.agent-profile-info');
+    if (old) old.remove();
+
+    if (data && data.hasData && data.metadata) {
+        const m = data.metadata;
+        const info = document.createElement('div');
+        info.className = 'agent-profile-info fade-in';
+        info.innerHTML = `
+            <div class="profile-meta-item">
+                <span class="profile-meta-label">Supervisor</span>
+                <span class="profile-meta-value">${m.supervisor || 'N/A'}</span>
+            </div>
+            <div class="profile-meta-item">
+                <span class="profile-meta-label">Team</span>
+                <span class="profile-meta-value">${m.team || 'N/A'}</span>
+            </div>
+            <div class="profile-meta-item">
+                <span class="profile-meta-label">LOB</span>
+                <span class="profile-meta-value">${m.lob || 'N/A'}</span>
+            </div>
+        `;
+        wrapper.appendChild(info);
+
+        // Adjust grid span to make room
+        const searchGroup = wrapper.querySelector('.search-group');
+        if (searchGroup) searchGroup.className = 'input-group search-group grid-span-2';
+    } else {
+        const searchGroup = wrapper.querySelector('.search-group');
+        if (searchGroup) searchGroup.className = 'input-group search-group grid-span-4';
+    }
+}
+
 function renderView() {
   if (State.currentTab === 'agent') {
     renderAgentView();
@@ -277,6 +351,7 @@ function renderView() {
 
 function renderAgentView() {
   const data = State.filteredData;
+  renderProfileInfo(data);
   const container = document.getElementById('view-content');
   if (!container) return;
 
@@ -294,18 +369,26 @@ function renderAgentView() {
   const s = data.stats;
 
   container.innerHTML = `
+    <!-- Top Opportunities -->
+    ${renderTopOpportunities(s.groupedParams)}
+
     <!-- Top Level Cards -->
+    ${renderPremiumScoreCard('Customer Critical', s.customer || 0, s.targets.CUSTOMER)}
+    ${renderPremiumScoreCard('Business Critical', s.business || 0, s.targets.BUSINESS)}
+    ${renderPremiumScoreCard('Compliance Critical', s.compliance || 0, s.targets.COMPLIANCE)}
+
     <div class="card">
       <div class="card-title">Total Audits</div>
       <div class="score-value">${s.count}</div>
       <div class="trend-badge trend-up"><i class="ph ph-trend-up"></i> ${State.selectedMonth}</div>
     </div>
 
-    ${renderPremiumScoreCard('Customer Critical', s.customer || 0, s.targets.CUSTOMER)}
-    ${renderPremiumScoreCard('Business Critical', s.business || 0, s.targets.BUSINESS)}
-    ${renderPremiumScoreCard('Compliance Critical', s.compliance || 0, s.targets.COMPLIANCE)}
-
     <!-- Graphs -->
+    <div class="card">
+        <div class="card-title">Distribution</div>
+        <div id="chart-radar" style="height: 350px;"></div>
+    </div>
+
     <div class="card grid-span-3">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
             <div class="card-title" style="margin:0;">Performance Trends</div>
@@ -315,10 +398,6 @@ function renderAgentView() {
             </div>
         </div>
         <div id="chart-trends" style="height: 350px;"></div>
-    </div>
-    <div class="card">
-        <div class="card-title">Distribution</div>
-        <div id="chart-radar" style="height: 350px;"></div>
     </div>
 
     <!-- Parameter Breakdown -->
@@ -422,9 +501,12 @@ function renderCaseCard(c, index) {
         <div class="case-card" data-perfect="${isPerfectAudit}" data-markdown="${!isPerfectAudit}" data-comments="${escapedComments}">
             <div class="case-summary">
                 <div class="case-id-group">
-                    <a href="javascript:void(0)" class="case-id-link" onclick="copyToClipboard('${c.caseId}')">
-                        ${c.caseId} <i class="ph ph-copy"></i>
-                    </a>
+                    <div style="display:flex; align-items:center; gap: 8px;">
+                        <a href="https://cases.connect.corp.google.com/${c.caseId}" target="_blank" class="case-id-link">
+                            ${c.caseId} <i class="ph ph-arrow-square-out"></i>
+                        </a>
+                        <i class="ph ph-copy" style="cursor:pointer; color: var(--text-secondary); font-size:14px;" onclick="copyToClipboard('${c.caseId}')" title="Copy Case ID"></i>
+                    </div>
                     <span class="case-date">${c.reviewDate}</span>
                 </div>
                 <div class="case-status-icon ${(custScore >= 95 || (custScore >= 0.95 && custScore <= 1.1)) ? 'pass' : 'fail'}">
@@ -437,7 +519,10 @@ function renderCaseCard(c, index) {
                     <i class="ph-fill ${(compScore >= 99.5 || (compScore >= 0.995 && compScore <= 1.1)) ? 'ph-check-circle' : 'ph-x-circle'}"></i>
                 </div>
                 <div>${markdownsHtml}</div>
-                <div style="text-align:right;">
+                <div style="text-align:right; display:flex; gap:8px; justify-content: flex-end;">
+                    <button class="icon-button" style="width:32px; height:32px;" onclick="copyMarkdownSummary(${index})" title="Copy Markdown Summary">
+                        <i class="ph ph-share-network"></i>
+                    </button>
                     <button class="details-btn" onclick="toggleCaseDetails(${index})">Details</button>
                 </div>
             </div>
@@ -530,7 +615,7 @@ function toggleCaseDetails(index) {
     }
 }
 
-function copyToClipboard(text) {
+function copyToClipboard(text, message = 'Case ID copied to clipboard') {
     navigator.clipboard.writeText(text).then(() => {
         const feedback = document.createElement('div');
         feedback.style.position = 'fixed';
@@ -543,10 +628,45 @@ function copyToClipboard(text) {
         feedback.style.borderRadius = '20px';
         feedback.style.fontSize = '12px';
         feedback.style.zIndex = '10000';
-        feedback.textContent = 'Case ID copied to clipboard';
+        feedback.textContent = message;
         document.body.appendChild(feedback);
         setTimeout(() => feedback.remove(), 2000);
     });
+}
+
+function copyMarkdownSummary(index) {
+    const data = State.filteredData;
+    if (!data || !data.caseLog[index]) return;
+    const c = data.caseLog[index];
+
+    let summary = `🚨 *Audit Feedback: Case ${c.caseId}* (${c.reviewDate})\n\n`;
+
+    // Scores
+    summary += `*Scores:*\n`;
+    summary += `• Customer: ${parseScore(c.customer).toFixed(1)}%\n`;
+    summary += `• Business: ${parseScore(c.business).toFixed(1)}%\n`;
+    summary += `• Compliance: ${parseScore(c.compliance).toFixed(1)}%\n\n`;
+
+    // Markdowns
+    let markdowns = [];
+    for (const cat in c.details) {
+        for (const p in c.details[cat]) {
+            const val = String(c.details[cat][p]).toLowerCase();
+            if (val === 'no' || val === '0' || val === 'fail') {
+                markdowns.push(`- [${cat.toUpperCase()}] ${p.replace(/_/g, ' ')}`);
+            }
+        }
+    }
+
+    if (markdowns.length > 0) {
+        summary += `*Opportunities:*\n${markdowns.join('\n')}\n\n`;
+    } else {
+        summary += `*Perfect Audit!* No markdowns identified.\n\n`;
+    }
+
+    summary += `*Comments:* \n"${c.comments || 'No comments'}"`;
+
+    copyToClipboard(summary, 'Markdown summary copied for coaching!');
 }
 
 function renderPremiumScoreCard(title, score, target) {
@@ -560,6 +680,60 @@ function renderPremiumScoreCard(title, score, target) {
             <div class="trend-badge ${isPass ? 'trend-up' : 'trend-down'}">
                 <i class="ph ${isPass ? 'ph-check-circle' : 'ph-warning'}"></i>
                 Target: ${t}%
+            </div>
+        </div>
+    `;
+}
+
+function renderTopOpportunities(groupedParams) {
+    // Flatten all parameters and filter out those without scores or with 100%
+    const allParams = [];
+    for (const cat in groupedParams) {
+        groupedParams[cat].forEach(p => {
+            if (p.score !== null && p.score < 100) {
+                allParams.push({ ...p, category: cat });
+            }
+        });
+    }
+
+    // Sort by score ascending
+    allParams.sort((a, b) => a.score - b.score);
+    const top3 = allParams.slice(0, 3);
+
+    if (top3.length === 0) return '';
+
+    const tips = {
+        'LISTENING': 'Active listening and acknowledging customer concerns reduces dead air.',
+        'PROBING': 'Ask open-ended questions to uncover the root cause faster.',
+        'COMPLETE_RESOLUTION': 'Verify all customer issues are addressed before closing.',
+        'TROUBLESHOOTING': 'Follow the standard logic and double-check prerequisites.',
+        'EMPATHY': 'Acknowledge the customer\'s feelings to build rapport.',
+        'OWNERSHIP': 'Reassure the customer that you are handling their issue.',
+        'CONSULTS_ESCALATIONS': 'Check internal KB before consulting to save time.',
+        'AUTHENTICATION': 'Ensure strict adherence to verification protocols.',
+        'GOOGLE_ONLY_INFO': 'Sensitive data must never be shared externally.'
+    };
+
+    const oppCards = top3.map(o => `
+        <div class="opportunity-card">
+            <div class="opp-header">
+                <span class="opp-cat">${o.category}</span>
+                <span class="opp-score">${o.score.toFixed(0)}%</span>
+            </div>
+            <div class="opp-name">${o.name.replace(/_/g, ' ')}</div>
+            <div class="opp-tip">
+                <strong>Tip:</strong> ${tips[o.name] || 'Review the quality guidelines for this parameter to improve accuracy.'}
+            </div>
+        </div>
+    `).join('');
+
+    return `
+        <div class="card grid-span-4" style="background: rgba(255, 149, 0, 0.05); border-color: rgba(255, 149, 0, 0.2);">
+            <div class="card-title" style="color: var(--apple-orange); display: flex; align-items: center; gap: 8px;">
+                <i class="ph-fill ph-lightbulb"></i> Top Opportunities & Coaching Tips
+            </div>
+            <div class="opportunities-grid">
+                ${oppCards}
             </div>
         </div>
     `;
@@ -713,18 +887,18 @@ function renderTeamView() {
     const s = data.stats;
     const avg = ((s.customer || 0) + (s.business || 0) + (s.compliance || 0)) / 3;
     container.innerHTML = `
-        <div class="card">${renderMiniStat('Team Avg', Number(avg || 0).toFixed(1) + '%')}</div>
         ${renderPremiumScoreCard('Customer', s.customer || 0, s.targets.CUSTOMER)}
         ${renderPremiumScoreCard('Business', s.business || 0, s.targets.BUSINESS)}
         ${renderPremiumScoreCard('Compliance', s.compliance || 0, s.targets.COMPLIANCE)}
+        <div class="card">${renderMiniStat('Team Avg', Number(avg || 0).toFixed(1) + '%')}</div>
 
-        <div class="card grid-span-3">
-            <div class="card-title">Team Performance Trends</div>
-            <div id="chart-trends" style="height: 350px;"></div>
-        </div>
         <div class="card">
             <div class="card-title">Team Distribution</div>
             <div id="chart-radar" style="height: 350px;"></div>
+        </div>
+        <div class="card grid-span-3">
+            <div class="card-title">Team Performance Trends</div>
+            <div id="chart-trends" style="height: 350px;"></div>
         </div>
 
         <div class="card grid-span-4">
@@ -760,19 +934,19 @@ function renderClusterView() {
     const s = data.stats;
     container.innerHTML = `
         <div class="card grid-span-4" style="display:grid; grid-template-columns: repeat(4, 1fr); gap: 20px;">
-            ${renderMiniStat('Total Audits', s.count || 0)}
             ${renderMiniStat('Cust. Avg', Number(s.customer || 0).toFixed(1) + '%')}
             ${renderMiniStat('Bus. Avg', Number(s.business || 0).toFixed(1) + '%')}
             ${renderMiniStat('Comp. Avg', Number(s.compliance || 0).toFixed(1) + '%')}
+            ${renderMiniStat('Total Audits', s.count || 0)}
         </div>
 
-        <div class="card grid-span-3">
-            <div class="card-title">Cluster Performance Trends</div>
-            <div id="chart-trends" style="height: 350px;"></div>
-        </div>
         <div class="card">
             <div class="card-title">Cluster Distribution</div>
             <div id="chart-radar" style="height: 350px;"></div>
+        </div>
+        <div class="card grid-span-3">
+            <div class="card-title">Cluster Performance Trends</div>
+            <div id="chart-trends" style="height: 350px;"></div>
         </div>
 
         <div class="card grid-span-4">
