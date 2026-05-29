@@ -277,18 +277,29 @@ function renderProfileInfo(data) {
         const m = data.metadata;
         const info = document.createElement('div');
         info.className = 'agent-profile-info fade-in';
+
+        const ldap = State.selectedLdap || '';
+        // Image logic: try PLUS first, then CUSTOM
+        const imgUrl = `https://moma-teams-photos.corp.google.com/photos/${ldap}?sz=600&type=PLUS`;
+        const fallbackUrl = `https://moma-teams-photos.corp.google.com/photos/${ldap}?sz=600&type=CUSTOM`;
+
         info.innerHTML = `
-            <div class="profile-meta-item">
-                <span class="profile-meta-label">Supervisor</span>
-                <span class="profile-meta-value">${m.supervisor || 'N/A'}</span>
-            </div>
-            <div class="profile-meta-item">
-                <span class="profile-meta-label">Team</span>
-                <span class="profile-meta-value">${m.team || 'N/A'}</span>
-            </div>
-            <div class="profile-meta-item">
-                <span class="profile-meta-label">LOB</span>
-                <span class="profile-meta-value">${m.lob || 'N/A'}</span>
+            <div class="profile-card-main">
+                <img src="${imgUrl}" class="agent-profile-img" onerror="this.onerror=null;this.src='${fallbackUrl}';">
+                <div class="profile-meta-grid">
+                    <div class="profile-meta-item">
+                        <span class="profile-meta-label">Supervisor</span>
+                        <span class="profile-meta-value">${m.supervisor || 'N/A'}</span>
+                    </div>
+                    <div class="profile-meta-item">
+                        <span class="profile-meta-label">Team</span>
+                        <span class="profile-meta-value">${m.team || 'N/A'}</span>
+                    </div>
+                    <div class="profile-meta-item">
+                        <span class="profile-meta-label">LOB</span>
+                        <span class="profile-meta-value">${m.lob || 'N/A'}</span>
+                    </div>
+                </div>
             </div>
         `;
         wrapper.appendChild(info);
@@ -464,8 +475,9 @@ function renderCaseCard(c, index) {
             <div class="case-summary">
                 <div class="case-id-group">
                     <div style="display:flex; align-items:center; gap: 8px;">
+                        <i class="ph ph-file-text" style="color: var(--apple-blue); font-size: 16px;"></i>
                         <a href="https://cases.connect.corp.google.com/${c.caseId}" target="_blank" class="case-id-link">
-                            ${c.caseId} <i class="ph ph-arrow-square-out"></i>
+                            ${c.caseId || 'UNKNOWN'} <i class="ph ph-arrow-square-out" style="font-size: 10px;"></i>
                         </a>
                         <i class="ph ph-copy" style="cursor:pointer; color: var(--text-secondary); font-size:14px;" onclick="copyToClipboard('${c.caseId}')" title="Copy Case ID"></i>
                     </div>
@@ -707,7 +719,7 @@ function renderParamGroup(title, params) {
             <div class="param-group-title">${title}</div>
             <div class="param-list">
                 ${params.map(p => {
-                    const hasData = p.score !== null;
+                    const hasData = p.score !== null && !isNaN(p.score);
                     const score = hasData ? Number(p.score) : 0;
                     const scoreDisplay = hasData ? score.toFixed(0) + '%' : '—';
 
@@ -729,13 +741,13 @@ function renderParamGroup(title, params) {
                     }
 
                     return `
-                        <div class="param-item" style="${!hasData ? 'opacity: 0.6;' : ''}">
+                        <div class="param-item" style="${!hasData ? 'opacity: 0.5;' : ''}">
                             <div class="param-info">
-                                <span class="param-name" style="color: ${textColor}; font-weight: ${weight}">${p.name.replace(/_/g, ' ')}</span>
-                                <span class="param-score" style="color: ${textColor}; font-weight: 700">${scoreDisplay}</span>
+                                <span class="param-name" style="color: ${hasData ? textColor : 'var(--text-secondary)'}; font-weight: ${weight}">${p.name.replace(/_/g, ' ')}</span>
+                                <span class="param-score" style="color: ${hasData ? textColor : 'var(--text-secondary)'}; font-weight: 700">${hasData ? scoreDisplay : 'N/A'}</span>
                             </div>
                             <div class="param-progress-bg">
-                                <div class="param-progress-fill" style="width: ${score}%; background: ${barColor}"></div>
+                                <div class="param-progress-fill" style="width: ${hasData ? score : 0}%; background: ${hasData ? barColor : 'var(--apple-light-gray)'}"></div>
                             </div>
                         </div>
                     `;
@@ -778,6 +790,7 @@ function renderCharts(data) {
     const trendData = (State.trendView === 'daily') ? data.trends.daily : data.trends.weekly;
 
     if (trendsEl && trendData && trendData.length > 0) {
+        const targets = s.targets || { CUSTOMER: 95, BUSINESS: 90, COMPLIANCE: 99.5 };
         new ApexCharts(trendsEl, {
             ...chartOptions,
             series: [
@@ -788,6 +801,13 @@ function renderCharts(data) {
             chart: { ...chartOptions.chart, type: 'area' },
             colors: ['#007AFF', '#34C759', '#FF3B30'],
             xaxis: { ...chartOptions.xaxis, categories: trendData.map(d => d.label) },
+            annotations: {
+                yaxis: [
+                    { y: targets.CUSTOMER, borderColor: '#007AFF', label: { text: 'Cust Target', style: { color: '#fff', background: '#007AFF' } } },
+                    { y: targets.BUSINESS, borderColor: '#34C759', label: { text: 'Bus Target', style: { color: '#fff', background: '#34C759' } } },
+                    { y: targets.COMPLIANCE, borderColor: '#FF3B30', label: { text: 'Comp Target', style: { color: '#fff', background: '#FF3B30' } } }
+                ]
+            },
             fill: {
                 type: 'gradient',
                 gradient: {
