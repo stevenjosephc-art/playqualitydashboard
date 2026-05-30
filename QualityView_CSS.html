@@ -240,7 +240,8 @@ body.apple-style {
   margin-bottom: 32px;
   border: var(--glass-border);
   box-shadow: var(--shadow-md);
-  overflow: hidden;
+  overflow: visible; /* Ensure autocomplete dropdown is not clipped */
+  z-index: 100;
 }
 
 .profile-and-search {
@@ -715,17 +716,18 @@ input:checked + .toggle-slider:before {
 .case-id-link {
   font-size: 14px;
   font-weight: 700;
-  color: var(--text-primary) !important;
-  display: flex;
+  color: var(--apple-blue) !important; /* Use blue for visibility as per typical hyperlink expectations */
+  display: inline-flex;
   align-items: center;
   gap: 4px;
   text-decoration: none;
   transition: all 0.2s;
+  white-space: nowrap;
 }
 
 .case-id-link:hover {
   text-decoration: underline !important;
-  color: var(--apple-blue) !important;
+  opacity: 0.8;
 }
 
 .case-date {
@@ -772,30 +774,30 @@ input:checked + .toggle-slider:before {
 .tag-bus { background: rgba(52, 199, 89, 0.1); color: var(--apple-green); border: 1px solid rgba(52, 199, 89, 0.2); }
 .tag-comp { background: rgba(255, 59, 48, 0.1); color: var(--apple-red); border: 1px solid rgba(255, 59, 48, 0.2); }
 
-/* Opportunities Card */
-.opportunities-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
-}
-
-.opportunity-card {
-  background: white;
-  border-radius: 12px;
-  padding: 16px;
-  border: 1px solid rgba(0,0,0,0.05);
+/* Opportunities & Strengths Layout */
+.opportunities-grid-vertical, .strengths-grid {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-.opp-header {
+.opportunity-card, .strength-mini-card {
+  background: white;
+  border-radius: 12px;
+  padding: 12px 16px;
+  border: 1px solid rgba(0,0,0,0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.opp-header, .str-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-.opp-cat {
+.opp-cat, .str-cat {
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
@@ -804,12 +806,18 @@ input:checked + .toggle-slider:before {
 }
 
 .opp-score {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--apple-red);
 }
 
-.opp-name {
+.str-score {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--apple-green);
+}
+
+.opp-name, .str-name {
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);

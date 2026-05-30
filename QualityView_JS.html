@@ -79,7 +79,8 @@ async function initApp(forceRefresh = false) {
         console.log('QualityOS: Root displayed.');
     }
 
-    await fetchData(forceRefresh);
+    // Initialize the correct tab view (shows selectors)
+    switchTab(State.currentTab);
 
   } catch (e) {
     console.error('QualityOS Error:', e);
@@ -204,7 +205,18 @@ function setupLDAPAutocomplete() {
       matches.forEach(m => {
         const item = document.createElement('div');
         item.className = 'autocomplete-item';
-        item.textContent = m;
+
+        // Highlight match
+        const idx = m.toLowerCase().indexOf(val);
+        if (idx !== -1) {
+            const before = m.substring(0, idx);
+            const match = m.substring(idx, idx + val.length);
+            const after = m.substring(idx + val.length);
+            item.innerHTML = `${before}<b>${match}</b>${after}`;
+        } else {
+            item.textContent = m;
+        }
+
         item.onclick = () => {
           input.value = m;
           list.style.display = 'none';
@@ -216,6 +228,24 @@ function setupLDAPAutocomplete() {
       list.style.display = 'block';
     } else {
       list.style.display = 'none';
+    }
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        const val = input.value.toLowerCase();
+        if (!val) return;
+
+        const matches = allAgents.filter(a => a.toLowerCase().includes(val));
+        if (matches.length > 0) {
+            // Auto-select first match
+            const m = matches[0];
+            input.value = m;
+            list.style.display = 'none';
+            State.selectedLdap = m;
+            fetchData();
+            input.blur();
+        }
     }
   });
 
@@ -356,6 +386,9 @@ function renderAgentView() {
         <i class="ph ph-mask-sad" style="font-size: 64px; color: var(--apple-gray); margin-bottom: 20px; display:block;"></i>
         <div style="font-size: 20px; font-weight: 700;">No Data Found</div>
         <div style="color: var(--text-secondary); margin-top: 8px;">We couldn't find any audits for ${State.selectedLdap} in ${State.selectedMonth}</div>
+        <button class="icon-button" style="margin: 24px auto 0; width: auto; padding: 0 20px; gap: 8px; border-radius: 20px; background: var(--apple-blue); color: white;" onclick="jumpToLatestData()">
+            <i class="ph ph-sparkle"></i> Jump to Latest Data
+        </button>
       </div>
     `;
     return;
@@ -364,8 +397,11 @@ function renderAgentView() {
   const s = data.stats;
 
   container.innerHTML = `
-    <!-- Top Opportunities -->
-    ${renderTopOpportunities(s.groupedParams)}
+    <!-- Top Opportunities & Strengths -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; grid-column: span 4; margin-bottom: 24px;">
+        ${renderTopOpportunities(s.groupedParams)}
+        ${renderTopStrengths(s.groupedParams)}
+    </div>
 
     <!-- Top Level Cards -->
     ${renderPremiumScoreCard('Customer Critical', s.customer || 0, s.targets.CUSTOMER)}
@@ -497,12 +533,13 @@ function renderCaseCard(c, index) {
         <div class="case-card" data-perfect="${isPerfectAudit}" data-markdown="${!isPerfectAudit}" data-comments="${escapedComments}">
             <div class="case-summary">
                 <div class="case-id-group">
-                    <div style="display:flex; align-items:center; gap: 4px;">
-                        <i class="ph-bold ph-file-text" style="color: var(--text-secondary); font-size: 16px; margin-right: 4px;"></i>
+                    <div style="display:flex; align-items:center; gap: 4px; overflow: visible;">
+                        <i class="ph-bold ph-file-text" style="color: var(--text-secondary); font-size: 16px; flex-shrink: 0;"></i>
                         <a href="https://cases.connect.corp.google.com/${c.caseId}" target="_blank" class="case-id-link">
-                            ${c.caseId || 'UNKNOWN'} <i class="ph ph-arrow-square-out" style="font-size: 11px;"></i>
+                            <span>${String(c.caseId || 'UNKNOWN').trim()}</span>
+                            <i class="ph ph-arrow-square-out" style="font-size: 11px;"></i>
                         </a>
-                        <i class="ph ph-copy" style="cursor:pointer; color: var(--text-secondary); font-size:13px; margin-left: 2px;" onclick="copyToClipboard('${c.caseId}')" title="Copy Case ID"></i>
+                        <i class="ph ph-copy" style="cursor:pointer; color: var(--text-secondary); font-size:13px; flex-shrink: 0;" onclick="copyToClipboard('${c.caseId}')" title="Copy Case ID"></i>
                     </div>
                     <span class="case-date">${c.reviewDate}</span>
                 </div>
@@ -682,6 +719,66 @@ function renderPremiumScoreCard(title, score, target) {
     `;
 }
 
+function jumpToLatestData() {
+    if (!State.initialData || !State.initialData.months || State.initialData.months.length === 0) return;
+
+    // We try each month starting from the newest until we find one with audits
+    const latestMonth = State.initialData.months[0];
+    if (latestMonth !== State.selectedMonth) {
+        const picker = document.getElementById('quality-month-picker');
+        if (picker) picker.value = latestMonth;
+        State.selectedMonth = latestMonth;
+        fetchData();
+    }
+}
+
+function renderTopStrengths(groupedParams) {
+    const strengths = [];
+    for (const cat in groupedParams) {
+        groupedParams[cat].forEach(p => {
+            if (p.score !== null && p.score >= 100) {
+                strengths.push({ ...p, category: cat });
+            }
+        });
+    }
+
+    const top3 = strengths.slice(0, 3);
+
+    if (top3.length === 0) {
+        return `
+            <div class="card" style="background: rgba(52, 199, 89, 0.05); border-color: rgba(52, 199, 89, 0.2); margin: 0;">
+                <div class="card-title" style="color: var(--apple-green); display: flex; align-items: center; gap: 8px;">
+                    <i class="ph-fill ph-medal"></i> Top Strengths
+                </div>
+                <div style="color: var(--text-secondary); font-size: 13px; font-style: italic; padding: 20px; text-align: center;">
+                    Keep pushing! Consistency is key to unlocking top strengths.
+                </div>
+            </div>
+        `;
+    }
+
+    const cards = top3.map(s => `
+        <div class="strength-mini-card">
+            <div class="str-header">
+                <span class="str-cat">${s.category}</span>
+                <span class="str-score"><i class="ph-fill ph-check-circle"></i> 100%</span>
+            </div>
+            <div class="str-name">${s.name.replace(/_/g, ' ')}</div>
+        </div>
+    `).join('');
+
+    return `
+        <div class="card" style="background: rgba(52, 199, 89, 0.05); border-color: rgba(52, 199, 89, 0.2); margin: 0;">
+            <div class="card-title" style="color: var(--apple-green); display: flex; align-items: center; gap: 8px;">
+                <i class="ph-fill ph-medal"></i> Top Strengths
+            </div>
+            <div class="strengths-grid">
+                ${cards}
+            </div>
+        </div>
+    `;
+}
+
 function renderTopOpportunities(groupedParams) {
     // Flatten all parameters and filter out those without scores or with 100%
     const allParams = [];
@@ -697,7 +794,18 @@ function renderTopOpportunities(groupedParams) {
     allParams.sort((a, b) => a.score - b.score);
     const top3 = allParams.slice(0, 3);
 
-    if (top3.length === 0) return '';
+    if (top3.length === 0) {
+        return `
+            <div class="card" style="background: rgba(255, 149, 0, 0.05); border-color: rgba(255, 149, 0, 0.2); margin: 0;">
+                <div class="card-title" style="color: var(--apple-orange); display: flex; align-items: center; gap: 8px;">
+                    <i class="ph-fill ph-lightbulb"></i> Top Opportunities
+                </div>
+                <div style="color: var(--text-secondary); font-size: 13px; font-style: italic; padding: 20px; text-align: center;">
+                    Excellent work! No markdowns identified in this period.
+                </div>
+            </div>
+        `;
+    }
 
     const tips = {
         'LISTENING': 'Active listening and acknowledging customer concerns reduces dead air.',
@@ -725,11 +833,11 @@ function renderTopOpportunities(groupedParams) {
     `).join('');
 
     return `
-        <div class="card grid-span-4" style="background: rgba(255, 149, 0, 0.05); border-color: rgba(255, 149, 0, 0.2);">
+        <div class="card" style="background: rgba(255, 149, 0, 0.05); border-color: rgba(255, 149, 0, 0.2); margin: 0;">
             <div class="card-title" style="color: var(--apple-orange); display: flex; align-items: center; gap: 8px;">
-                <i class="ph-fill ph-lightbulb"></i> Top Opportunities & Coaching Tips
+                <i class="ph-fill ph-lightbulb"></i> Top Opportunities
             </div>
-            <div class="opportunities-grid">
+            <div class="opportunities-grid-vertical">
                 ${oppCards}
             </div>
         </div>
@@ -814,16 +922,32 @@ function renderCharts(data) {
 
     if (trendsEl && trendData && trendData.length > 0) {
         const targets = s.targets || { CUSTOMER: 95, BUSINESS: 90, COMPLIANCE: 99.5 };
+        const series = [
+            { name: 'Customer', data: trendData.map(d => Number(d.customer || 0).toFixed(1)) },
+            { name: 'Business', data: trendData.map(d => Number(d.business || 0).toFixed(1)) },
+            { name: 'Compliance', data: trendData.map(d => Number(d.compliance || 0).toFixed(1)) }
+        ];
+
+        // Add Team Benchmarking Line if available
+        if (data.teamAvg && data.teamAvg.hasData && State.currentTab === 'agent') {
+            const teamAvgVal = ((data.teamAvg.customer + data.teamAvg.business + data.teamAvg.compliance) / 3).toFixed(1);
+            series.push({
+                name: 'Team Average',
+                type: 'line',
+                data: trendData.map(() => teamAvgVal)
+            });
+        }
+
         new ApexCharts(trendsEl, {
             ...chartOptions,
-            series: [
-                { name: 'Customer', data: trendData.map(d => Number(d.customer || 0).toFixed(1)) },
-                { name: 'Business', data: trendData.map(d => Number(d.business || 0).toFixed(1)) },
-                { name: 'Compliance', data: trendData.map(d => Number(d.compliance || 0).toFixed(1)) }
-            ],
+            series: series,
             chart: { ...chartOptions.chart, type: 'area' },
-            colors: ['#007AFF', '#34C759', '#FF3B30'],
+            colors: ['#007AFF', '#34C759', '#FF3B30', '#8E8E93'],
             xaxis: { ...chartOptions.xaxis, categories: trendData.map(d => d.label) },
+            stroke: {
+                ...chartOptions.stroke,
+                dashArray: [0, 0, 0, 8] // Dotted line for Team Average
+            },
             annotations: {
                 yaxis: [
                     { y: targets.CUSTOMER, borderColor: '#007AFF', label: { text: 'Cust Target', style: { color: '#fff', background: '#007AFF' } } },
