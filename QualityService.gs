@@ -107,19 +107,17 @@ function doGet() {
   var template = HtmlService.createTemplateFromFile('QualityView');
 
   try {
-    // Only fetch session for instant shell loading
-    var session = clientGetSession();
+    // Fetch initial data for instant shell loading
+    var initialData = clientGetInitialData();
 
-    template.bootstrap = JSON.stringify({
-      session: session
-    });
+    template.bootstrap = JSON.stringify(initialData);
   } catch(e) {
     Logger.log('doGet Error: ' + e.message);
     template.bootstrap = JSON.stringify({ error: e.message });
   }
 
   return template.evaluate()
-    .setTitle('Quality Dashboard')
+    .setTitle('CEB - Play Quality Scores')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
