@@ -31,7 +31,14 @@ async function initApp(forceRefresh = false) {
 
   try {
     let data = null;
-    if (!forceRefresh) {
+
+    // Check Bootstrap first
+    if (!forceRefresh && typeof BOOTSTRAP_DATA !== 'undefined' && BOOTSTRAP_DATA && !BOOTSTRAP_DATA.error) {
+        data = BOOTSTRAP_DATA;
+        console.log('QualityOS: Loaded Initial Data from Bootstrap');
+    }
+
+    if (!data && !forceRefresh) {
         try {
             const cached = sessionStorage.getItem('q_initial_data');
             if (cached) {
@@ -281,18 +288,11 @@ function handleImgError(img, chain) {
 }
 
 function renderProfileInfo(data) {
-    const wrapper = document.getElementById('selector-agent');
-    if (!wrapper) return;
-
-    // Remove old profile info if exists
-    const old = wrapper.querySelector('.agent-profile-info');
-    if (old) old.remove();
+    const target = document.getElementById('agent-profile-target');
+    if (!target) return;
 
     if (data && data.hasData && data.metadata) {
         const m = data.metadata;
-        const info = document.createElement('div');
-        info.className = 'agent-profile-info fade-in';
-
         const ldap = State.selectedLdap || '';
         const fallbackChain = [
             `https://moma-teams-photos.corp.google.com/photos/${ldap}?sz=120&type=PLUS`,
@@ -301,36 +301,36 @@ function renderProfileInfo(data) {
             `https://ui-avatars.com/api/?name=${ldap}&background=007AFF&color=fff&size=120`
         ];
 
-        info.innerHTML = `
-            <div class="profile-card-main">
-                <div class="profile-img-container">
+        target.innerHTML = `
+            <div class="profile-card-main fade-in">
+                <div class="profile-img-wrapper">
                     <img src="${fallbackChain[0]}" class="agent-profile-img"
                         onerror='handleImgError(this, ${JSON.stringify(fallbackChain)})'>
                 </div>
-                <div class="profile-meta-grid">
-                    <div class="profile-meta-item">
-                        <span class="profile-meta-label">Supervisor</span>
-                        <span class="profile-meta-value">${m.supervisor || 'N/A'}</span>
+                <div class="profile-info-content">
+                    <div class="profile-name-area">
+                        <div class="profile-name">${ldap}</div>
+                        <div class="profile-ldap-tag">Active Agent</div>
                     </div>
-                    <div class="profile-meta-item">
-                        <span class="profile-meta-label">Team</span>
-                        <span class="profile-meta-value">${m.team || 'N/A'}</span>
-                    </div>
-                    <div class="profile-meta-item">
-                        <span class="profile-meta-label">LOB</span>
-                        <span class="profile-meta-value">${m.lob || 'N/A'}</span>
+                    <div class="profile-meta-grid">
+                        <div class="profile-meta-item">
+                            <span class="profile-meta-label">Supervisor</span>
+                            <span class="profile-meta-value">${m.supervisor || 'N/A'}</span>
+                        </div>
+                        <div class="profile-meta-item">
+                            <span class="profile-meta-label">Team / Site</span>
+                            <span class="profile-meta-value">${m.team || 'N/A'}</span>
+                        </div>
+                        <div class="profile-meta-item">
+                            <span class="profile-meta-label">Line of Business</span>
+                            <span class="profile-meta-value">${m.lob || 'N/A'}</span>
+                        </div>
                     </div>
                 </div>
             </div>
         `;
-        wrapper.appendChild(info);
-
-        // Adjust grid span to make room
-        const searchGroup = wrapper.querySelector('.search-group');
-        if (searchGroup) searchGroup.className = 'input-group search-group grid-span-2';
     } else {
-        const searchGroup = wrapper.querySelector('.search-group');
-        if (searchGroup) searchGroup.className = 'input-group search-group grid-span-4';
+        target.innerHTML = `<div style="color:var(--text-secondary); font-style:italic; padding: 20px;">Select an agent to view profile...</div>`;
     }
 }
 
@@ -457,22 +457,24 @@ function renderCaseCard(c, index) {
     const tags = [];
     const catMap = { 'customer': { label: 'Cust', class: 'cust' }, 'business': { label: 'Bus', class: 'bus' }, 'compliance': { label: 'Comp', class: 'comp' } };
 
+    const catMarkdowns = { customer: false, business: false, compliance: false };
+
     for (const cat in c.details) {
-        let catHasMarkdown = false;
         for (const param in c.details[cat]) {
             const val = String(c.details[cat][param]).toLowerCase().trim();
             if (val === 'no' || val === '0' || val === 'fail') {
                 const info = catMap[cat] || { label: cat, class: 'gray' };
                 tags.push(`<span class="markdown-tag tag-${info.class}">${info.label}: ${param.replace(/_/g, ' ')}</span>`);
-                catHasMarkdown = true;
+                catMarkdowns[cat] = true;
             }
         }
 
         // Quality Improvement: If the critical score failed but no specific parameters were marked, add a generic Critical fail tag
         const s = (cat === 'customer') ? custScore : (cat === 'business' ? busScore : compScore);
-        if (!isScorePass(s) && !catHasMarkdown) {
+        if (!isScorePass(s) && !catMarkdowns[cat]) {
             const info = catMap[cat] || { label: cat, class: 'gray' };
             tags.push(`<span class="markdown-tag tag-${info.class}" style="background: var(--apple-red); color: white;">Critical ${info.label} Fail</span>`);
+            catMarkdowns[cat] = true;
         }
     }
 
@@ -496,7 +498,7 @@ function renderCaseCard(c, index) {
             <div class="case-summary">
                 <div class="case-id-group">
                     <div style="display:flex; align-items:center; gap: 4px;">
-                        <i class="ph ph-file-text" style="color: var(--apple-blue); font-size: 16px; margin-right: 4px;"></i>
+                        <i class="ph-bold ph-file-text" style="color: var(--text-secondary); font-size: 16px; margin-right: 4px;"></i>
                         <a href="https://cases.connect.corp.google.com/${c.caseId}" target="_blank" class="case-id-link">
                             ${c.caseId || 'UNKNOWN'} <i class="ph ph-arrow-square-out" style="font-size: 11px;"></i>
                         </a>
@@ -504,14 +506,14 @@ function renderCaseCard(c, index) {
                     </div>
                     <span class="case-date">${c.reviewDate}</span>
                 </div>
-                <div class="case-status-icon ${(custScore >= 95 || (custScore >= 0.95 && custScore <= 1.1)) ? 'pass' : 'fail'}">
-                    <i class="ph-fill ${(custScore >= 95 || (custScore >= 0.95 && custScore <= 1.1)) ? 'ph-check-circle' : 'ph-x-circle'}"></i>
+                <div class="case-status-icon ${!catMarkdowns.customer ? 'pass' : 'fail'}">
+                    <i class="ph-bold ${!catMarkdowns.customer ? 'ph-check-circle' : 'ph-x-circle'}"></i>
                 </div>
-                <div class="case-status-icon ${(busScore >= 90 || (busScore >= 0.90 && busScore <= 1.1)) ? 'pass' : 'fail'}">
-                    <i class="ph-fill ${(busScore >= 90 || (busScore >= 0.90 && busScore <= 1.1)) ? 'ph-check-circle' : 'ph-x-circle'}"></i>
+                <div class="case-status-icon ${!catMarkdowns.business ? 'pass' : 'fail'}">
+                    <i class="ph-bold ${!catMarkdowns.business ? 'ph-check-circle' : 'ph-x-circle'}"></i>
                 </div>
-                <div class="case-status-icon ${(compScore >= 99.5 || (compScore >= 0.995 && compScore <= 1.1)) ? 'pass' : 'fail'}">
-                    <i class="ph-fill ${(compScore >= 99.5 || (compScore >= 0.995 && compScore <= 1.1)) ? 'ph-check-circle' : 'ph-x-circle'}"></i>
+                <div class="case-status-icon ${!catMarkdowns.compliance ? 'pass' : 'fail'}">
+                    <i class="ph-bold ${!catMarkdowns.compliance ? 'ph-check-circle' : 'ph-x-circle'}"></i>
                 </div>
                 <div>${markdownsHtml}</div>
                 <div style="text-align:right; display:flex; gap:8px; justify-content: flex-end;">
@@ -1042,7 +1044,7 @@ function switchTab(tab) {
   const selTeam = document.getElementById('selector-team');
   const selCluster = document.getElementById('selector-cluster');
 
-  if (selAgent) selAgent.style.display = tab === 'agent' ? 'grid' : 'none';
+  if (selAgent) selAgent.style.display = tab === 'agent' ? 'flex' : 'none';
   if (selTeam) selTeam.style.display = tab === 'team' ? 'grid' : 'none';
   if (selCluster) selCluster.style.display = tab === 'cluster' ? 'grid' : 'none';
 

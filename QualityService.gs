@@ -37,7 +37,7 @@ function getColMapping() {
     return -1;
   };
 
-  map.CASE_ID = find('case_id');
+  map.CASE_ID = find('case_id') !== -1 ? find('case_id') : (find('case_#') !== -1 ? find('case_#') : find('case'));
   map.ENTITY_GROUP = find('billing_entity_group');
   map.AGENT_LDAP = find('agent_ldap');
   map.OPENING_CHANNEL = find('opening_channel');
@@ -107,19 +107,17 @@ function doGet() {
   var template = HtmlService.createTemplateFromFile('QualityView');
 
   try {
-    // Only fetch session for instant shell loading
-    var session = clientGetSession();
+    // Fetch initial data for instant shell loading
+    var initialData = clientGetInitialData();
 
-    template.bootstrap = JSON.stringify({
-      session: session
-    });
+    template.bootstrap = JSON.stringify(initialData);
   } catch(e) {
     Logger.log('doGet Error: ' + e.message);
     template.bootstrap = JSON.stringify({ error: e.message });
   }
 
   return template.evaluate()
-    .setTitle('Quality Dashboard')
+    .setTitle('CEB - Play Quality Scores')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
@@ -407,8 +405,9 @@ function clientGetMyQuality(ldap, month, forceRefresh) {
   var trends = aggregateTrends(filtered);
 
   var caseLog = filtered.map(function(r) {
+    var cId = r[Q_COLS.CASE_ID];
     return {
-      caseId: r[Q_COLS.CASE_ID],
+      caseId: cId ? String(cId).trim() : '',
       reviewDate: formatDate(r[Q_COLS.REVIEW_DATE]),
       customer: r[Q_COLS.CUSTOMER_CRITICAL],
       business: r[Q_COLS.BUSINESS_CRITICAL],

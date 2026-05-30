@@ -25,9 +25,9 @@
     <aside class="sidebar">
       <div class="sidebar-header">
         <div class="app-logo">
-          <i class="ph-fill ph-chart-pie-slice"></i>
+          <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/2/2f/Google_Play_2022_icon.svg/960px-Google_Play_2022_icon.svg.png" style="width: 24px; height: 24px;">
         </div>
-        <div class="app-name">QualityOS</div>
+        <div class="app-name">CEB - Play Quality Scores</div>
       </div>
 
       <nav class="sidebar-nav">
@@ -74,7 +74,7 @@
               </select>
             </div>
             <button class="icon-button refresh-btn" onclick="forceRefresh()" title="Refresh Data">
-              <i class="ph ph-arrows-clockwise"></i>
+              <i class="ph-bold ph-arrows-clockwise"></i>
             </button>
           </div>
         </div>
@@ -83,16 +83,19 @@
       <div class="scroll-container">
         <!-- Selectors Section -->
         <section class="selectors-section" id="selectors-container">
-          <!-- Agent Selectors -->
-          <div id="selector-agent" class="selector-row">
-            <div class="input-group search-group grid-span-4">
-              <label>Agent LDAP</label>
-              <div class="search-input-wrapper">
-                <i class="ph ph-magnifying-glass"></i>
-                <input type="text" id="ldap-search-input" placeholder="Enter LDAP (e.g. anggam) and press enter or select from list..." autocomplete="off">
-                <div id="ldap-autocomplete-list" class="autocomplete-dropdown"></div>
+          <!-- Agent Profile & Search -->
+          <div id="selector-agent" class="profile-and-search" style="display:none">
+            <div class="search-box">
+              <div class="input-group" style="width: 100%;">
+                <label>Agent Search</label>
+                <div class="search-input-wrapper">
+                  <i class="ph ph-magnifying-glass"></i>
+                  <input type="text" id="ldap-search-input" placeholder="Search LDAP..." autocomplete="off">
+                  <div id="ldap-autocomplete-list" class="autocomplete-dropdown"></div>
+                </div>
               </div>
             </div>
+            <div id="agent-profile-target" class="agent-profile-info"></div>
           </div>
 
           <!-- Team Selectors -->
@@ -130,6 +133,10 @@
     </main>
   </div>
 
+  <script>
+    // Bootstrap data from server
+    const BOOTSTRAP_DATA = <?!= bootstrap ?>;
+  </script>
   <?!= HtmlService.createHtmlOutputFromFile('QualityView_JS').getContent(); ?>
 </body>
 </html>
