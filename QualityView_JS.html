@@ -31,7 +31,14 @@ async function initApp(forceRefresh = false) {
 
   try {
     let data = null;
-    if (!forceRefresh) {
+
+    // Check Bootstrap first
+    if (!forceRefresh && typeof BOOTSTRAP_DATA !== 'undefined' && BOOTSTRAP_DATA && !BOOTSTRAP_DATA.error) {
+        data = BOOTSTRAP_DATA;
+        console.log('QualityOS: Loaded Initial Data from Bootstrap');
+    }
+
+    if (!data && !forceRefresh) {
         try {
             const cached = sessionStorage.getItem('q_initial_data');
             if (cached) {
@@ -496,7 +503,7 @@ function renderCaseCard(c, index) {
             <div class="case-summary">
                 <div class="case-id-group">
                     <div style="display:flex; align-items:center; gap: 4px;">
-                        <i class="ph ph-file-text" style="color: var(--apple-blue); font-size: 16px; margin-right: 4px;"></i>
+                        <i class="ph-bold ph-file-text" style="color: var(--text-secondary); font-size: 16px; margin-right: 4px;"></i>
                         <a href="https://cases.connect.corp.google.com/${c.caseId}" target="_blank" class="case-id-link">
                             ${c.caseId || 'UNKNOWN'} <i class="ph ph-arrow-square-out" style="font-size: 11px;"></i>
                         </a>
@@ -505,13 +512,13 @@ function renderCaseCard(c, index) {
                     <span class="case-date">${c.reviewDate}</span>
                 </div>
                 <div class="case-status-icon ${(custScore >= 95 || (custScore >= 0.95 && custScore <= 1.1)) ? 'pass' : 'fail'}">
-                    <i class="ph-fill ${(custScore >= 95 || (custScore >= 0.95 && custScore <= 1.1)) ? 'ph-check-circle' : 'ph-x-circle'}"></i>
+                    <i class="ph-fill ph-bold ${(custScore >= 95 || (custScore >= 0.95 && custScore <= 1.1)) ? 'ph-check-circle' : 'ph-x-circle'}"></i>
                 </div>
                 <div class="case-status-icon ${(busScore >= 90 || (busScore >= 0.90 && busScore <= 1.1)) ? 'pass' : 'fail'}">
-                    <i class="ph-fill ${(busScore >= 90 || (busScore >= 0.90 && busScore <= 1.1)) ? 'ph-check-circle' : 'ph-x-circle'}"></i>
+                    <i class="ph-fill ph-bold ${(busScore >= 90 || (busScore >= 0.90 && busScore <= 1.1)) ? 'ph-check-circle' : 'ph-x-circle'}"></i>
                 </div>
                 <div class="case-status-icon ${(compScore >= 99.5 || (compScore >= 0.995 && compScore <= 1.1)) ? 'pass' : 'fail'}">
-                    <i class="ph-fill ${(compScore >= 99.5 || (compScore >= 0.995 && compScore <= 1.1)) ? 'ph-check-circle' : 'ph-x-circle'}"></i>
+                    <i class="ph-fill ph-bold ${(compScore >= 99.5 || (compScore >= 0.995 && compScore <= 1.1)) ? 'ph-check-circle' : 'ph-x-circle'}"></i>
                 </div>
                 <div>${markdownsHtml}</div>
                 <div style="text-align:right; display:flex; gap:8px; justify-content: flex-end;">

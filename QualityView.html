@@ -25,9 +25,9 @@
     <aside class="sidebar">
       <div class="sidebar-header">
         <div class="app-logo">
-          <i class="ph-fill ph-chart-pie-slice"></i>
+          <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/2/2f/Google_Play_2022_icon.svg/960px-Google_Play_2022_icon.svg.png" style="width: 24px; height: 24px;">
         </div>
-        <div class="app-name">QualityOS</div>
+        <div class="app-name" style="font-size: 16px;">CEB - Play Quality Scores</div>
       </div>
 
       <nav class="sidebar-nav">
@@ -74,7 +74,7 @@
               </select>
             </div>
             <button class="icon-button refresh-btn" onclick="forceRefresh()" title="Refresh Data">
-              <i class="ph ph-arrows-clockwise"></i>
+              <i class="ph-bold ph-arrows-clockwise"></i>
             </button>
           </div>
         </div>
@@ -130,6 +130,10 @@
     </main>
   </div>
 
+  <script>
+    // Bootstrap data from server
+    const BOOTSTRAP_DATA = <?!= bootstrap ?>;
+  </script>
   <?!= HtmlService.createHtmlOutputFromFile('QualityView_JS').getContent(); ?>
 </body>
 </html>
