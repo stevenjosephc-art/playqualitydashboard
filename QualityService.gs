@@ -117,7 +117,7 @@ function doGet() {
   }
 
   return template.evaluate()
-    .setTitle('CEB - Play Quality Scores')
+    .setTitle('GenQA Scores')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
@@ -404,6 +404,27 @@ function clientGetMyQuality(ldap, month, forceRefresh) {
   var stats = aggregateQualityRows(filtered);
   var trends = aggregateTrends(filtered);
 
+  // Calculate Team Average for benchmarking
+  var teamAvg = { customer: 0, business: 0, compliance: 0, hasData: false };
+  if (filtered.length > 0) {
+    var supervisor = String(filtered[0][Q_COLS.SUPERVISOR]).trim();
+    var teamRows = [];
+    for (var i = 0; i < allRows.length; i++) {
+        var r = allRows[i];
+        if (String(r[Q_COLS.SUPERVISOR]).trim() === supervisor &&
+            normalizeQualityMonth(r[Q_COLS.REVIEW_MONTH]) === month) {
+            teamRows.push(r);
+        }
+    }
+    if (teamRows.length > 0) {
+        var teamStats = aggregateQualityRows(teamRows);
+        teamAvg.customer = teamStats.customer;
+        teamAvg.business = teamStats.business;
+        teamAvg.compliance = teamStats.compliance;
+        teamAvg.hasData = true;
+    }
+  }
+
   var caseLog = filtered.map(function(r) {
     var cId = r[Q_COLS.CASE_ID];
     return {
@@ -460,6 +481,7 @@ function clientGetMyQuality(ldap, month, forceRefresh) {
     trends: trends,
     caseLog: caseLog,
     metadata: metadata,
+    teamAvg: teamAvg,
     hasData: filtered.length > 0
   };
 
